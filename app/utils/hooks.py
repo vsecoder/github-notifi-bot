@@ -29,7 +29,7 @@ def create_webhook(
 
     try:
         repo = g.get_repo(integration)
-        repo.create_hook("GitNotifiBot", config, events, active=True)
+        repo.create_hook("web", config, events, active=True)
     except GithubException as e:
         return {"message": "Error creating webhook.", "error": e.data}
 

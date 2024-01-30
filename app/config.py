@@ -38,24 +38,9 @@ class ConfigDatabase:
 
 
 @dataclass
-class ConfigStorage:
-    use_persistent_storage: bool
-    redis_url: str = None
-
-
-@dataclass
-class ConfigWebhook:
-    port: int
-    path: str = "/webhook"
-    url: str = None
-
-
-@dataclass
 class ConfigSettings:
     owner_id: int
     throttling_rate: float = 0.5
-    use_webhook: bool = False
-    use_pyrogram_client: bool = False
     drop_pending_updates: bool = True
 
 
@@ -74,8 +59,6 @@ class ConfigApi:
 class Config:
     bot: ConfigBot
     database: ConfigDatabase
-    storage: ConfigStorage
-    webhook: ConfigWebhook
     settings: ConfigSettings
     api: ConfigApi
 

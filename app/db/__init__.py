@@ -10,7 +10,7 @@ async def create_models(tortoise_config: dict):
     command = Command(tortoise_config=tortoise_config, app="models")
     await command.init()
     await command.init_db(safe=True)
-    await command.upgrade()
+    await command.upgrade(run_in_transaction=True)
 
 
 async def migrate_models(tortoise_config: dict):
@@ -18,7 +18,7 @@ async def migrate_models(tortoise_config: dict):
     await command.init()
     with contextlib.suppress(Abort):
         await command.migrate()
-    await command.upgrade()
+    await command.upgrade(run_in_transaction=True)
 
 
 async def init_orm(tortoise_config: dict) -> None:

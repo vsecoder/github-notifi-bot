@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request
-from app.db.functions import User
+from app.db.functions import User, Chat, Integration
 
 router = APIRouter()
 

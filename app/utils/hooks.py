@@ -8,7 +8,8 @@ def create_webhook(
     gh_token: str,
     integration: str,
 ):
-    """Creates a webhook for the specified repository.
+    """
+    Creates a webhook for the specified repository.
     This is a programmatic approach to creating webhooks with PyGithub's API. If you wish, this can be done
     manually at your repository's page on Github in the "Settings" section. There is a option there to work with
     and configure Webhooks.
@@ -35,3 +36,47 @@ def create_webhook(
 
 def validate(token: str):
     pass
+
+
+def get_repos(token: str):
+    """
+    Returns a list of repositories for the specified user.
+    This is a programmatic approach to getting a list of repositories with PyGithub's API. If you wish, this can be done
+    manually at your repository's page on Github in the "Settings" section. There is a option there to work with
+    and configure Webhooks.
+    """
+
+    try:
+        auth = Auth.Token(token)
+        g = Github(auth=auth)
+    except GithubException as e:
+        return {"message": "Error authenticating with Github.", "error": e.data}
+
+    try:
+        repos = g.get_user().get_repos()
+    except GithubException as e:
+        return {"message": "Error getting repositories.", "error": e.data}
+
+    return repos
+
+
+def check_repo(token: str, repo: str):
+    """
+    Returns a list of repositories for the specified user.
+    This is a programmatic approach to getting a list of repositories with PyGithub's API. If you wish, this can be done
+    manually at your repository's page on Github in the "Settings" section. There is a option there to work with
+    and configure Webhooks.
+    """
+
+    try:
+        auth = Auth.Token(token)
+        g = Github(auth=auth)
+    except GithubException as e:
+        return {"message": "Error authenticating with Github.", "error": e.data}
+
+    try:
+        repos = g.get_repo(repo)
+    except GithubException as e:
+        return {"message": "Error getting repositories.", "error": e.data}
+
+    return repos

@@ -85,7 +85,7 @@ class Config:
         return cls(**sections)
 
 
-def parse_config(config_file: str) -> Config:
+def parse_config(config_file: str = "config.toml") -> Config:
     if not os.path.isfile(config_file) and not config_file.endswith(".toml"):
         config_file += ".toml"
 

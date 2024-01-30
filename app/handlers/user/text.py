@@ -33,8 +33,9 @@ async def text_handler(message: Message):
 
     if message.from_user.id == message.chat.id:
         text = (
-            f"📐 <b><a href='https://github.com/{repo.full_name}'>{repo.full_name}</a></b> {repo.stargazers_count} ⭐️ \n"
-            f"<i>{repo.description if repo.description else 'No description'}</i>\n\n"
+            f"📐 <b>{'🔒' if repo.private else ''} <a href='https://github.com/{repo.full_name}'>"
+            f"{repo.full_name}</a></b> {repo.stargazers_count} ⭐️ \n"
+            f"<i>{repo.description if repo.description else 'No description'}</i>\n"
             f"Run in chat <code>/integrate {repo.full_name}</code> to integrate this repository "
             "and get notifications about new commits."
         )

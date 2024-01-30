@@ -2,7 +2,7 @@ from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from app.utils.hooks import check_repo
+from app.utils.hooks import check_repo, create_webhook
 from app.db.functions import Chat, Integration, User
 
 router = Router()
@@ -55,14 +55,21 @@ async def integrate_handler(message: Message, bot: Bot):
         user_id=user.id,
     )
 
-    await message.answer(
-        f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",
-        parse_mode="HTML",
-    )
+    await message.answer(str(create_webhook(repo.full_name, integration.code)))
+
+    # await message.answer(
+    #    f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",
+    #    parse_mode="HTML",
+    # )
 
 
 @router.message(Command(commands=["integrations"]))
 async def integrations_handler(message: Message):
+    if message.chat.id == message.from_user.id:
+        return await message.answer(
+            "You can get integrations only in group or channel."
+        )
+
     if not await Chat.is_registered(message.chat.id):
         await Chat.register(message.chat.id)
 

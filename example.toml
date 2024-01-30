@@ -1,0 +1,27 @@
+[bot]
+token = "TOKEN"
+
+[database]
+models = ["app.db.functions", "aerich.models"]
+
+[storage] # (Optional) Persistent FSM Storage for aiogram and aiogram_dialog, disabled by default
+use_persistent_storage = false # (Optional)
+# redis_url = "redis://user:password@host:port/db" # (Optional) Redis URL for FSM storage
+
+[webhook] # (Optional) Settings for Webhook, disabled by default
+port = 1234
+# url = "https://example.com" # (Optional) Webhook URL
+# path = "/webhook" # (Optional) Webhook URL path
+
+[settings]
+owner_id = 123
+throttling_rate = 0.5
+use_webhook = false # (Optional)
+use_pyrogram_client = false
+drop_pending_updates = false
+
+[api] # API app settings for Pyrogram Client
+# Default values are from Telegram Desktop Client (t.me/durovleaks/108)
+# id = 2040 # (Optional) App ID
+# hash = "b18441a1ff607e10a989891a5462e627" # (Optional) App hash
+# bot_api_url = "https://api.telegram.org" # (Optional) Bot API URL

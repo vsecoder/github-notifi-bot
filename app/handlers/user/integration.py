@@ -55,7 +55,13 @@ async def integrate_handler(message: Message, bot: Bot):
         user_id=user.id,
     )
 
-    await message.answer(str(create_webhook(repo.full_name, integration.code)))
+    await message.answer(
+        str(
+            create_webhook(
+                "130.61.20.213:4454", integration.code, user.token, repo.full_name
+            )
+        )
+    )
 
     # await message.answer(
     #    f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",

@@ -13,7 +13,7 @@ def issue_message(res):
     return f"""<b>📌 On <a href="{res['issue']['url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>
 
 <i>{res["issue"]["title"]}</i>
-<a href="{res["issue"]["html_url"]}">#{res["issue"]["number"]}</a> by <a href="{res["sender"]["url"]}"><i>@{res["issue"]["user"]["login"]}</i></a>
+<a href="{res["issue"]["html_url"]}">#{res["issue"]["number"]}</a> by <a href="{res["sender"]["html_url"]}"><i>@{res["issue"]["user"]["login"]}</i></a>
     """
 
 
@@ -21,5 +21,5 @@ def star_message(res):
     return f"""<b>⭐️ On <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> stars count changed!</b>
 
 Total stars: <i>{res["repository"]["stargazers_count"]}</i>
-User: <a href="{res["sender"]["url"]}"><i>@{res["sender"]["login"]}</i></a>
+User: <a href="{res["sender"]["html_url"]}"><i>@{res["sender"]["login"]}</i></a>
     """

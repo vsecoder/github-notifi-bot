@@ -18,7 +18,7 @@ def issue_message(res):
 
 
 def star_message(res):
-    return f"""<b>⭐️ On <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> stars count changed!</b>
+    return f"""<b>⭐️ On <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> {"added" if res["action"] == "created" else "removed"} star!</b>
 
 Total stars: <i>{res["repository"]["stargazers_count"]}</i>
 User: <a href="{res["sender"]["html_url"]}"><i>@{res["sender"]["login"]}</i></a>

@@ -10,6 +10,12 @@ router = Router()
 
 @router.message(Command(commands=["token"]))
 async def cmd_start(message: Message):
+    if len(message.text.split()) != 2:
+        return await message.answer(
+            "Invalid command. Use <code>/token token</code>",
+            parse_mode="HTML",
+        )
+
     token = message.text.split()[1]
 
     if not validate(token):

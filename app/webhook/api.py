@@ -44,6 +44,7 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
             "chat_id": chat.chat_id,
             "text": message,
             "parse_mode": "HTML",
+            "disable_web_page_preview": True,
         },
     )
     return {"message": "Webhook triggered!"}

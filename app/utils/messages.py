@@ -10,7 +10,7 @@ def commit_message(res):
 
 
 def issue_message(res):
-    return f"""<b>📌 <a href="{res['issue']['url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>
+    return f"""<b>📌 On <a href="{res['issue']['url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>
 
 <i>{res["issue"]["title"]}</i>
 <a href="{res["issue"]["html_url"]}">#{res["issue"]["number"]}</a> by <i>@{res["issue"]["user"]["login"]}</i>
@@ -18,7 +18,8 @@ def issue_message(res):
 
 
 def star_message(res):
-    return f"""<b>⭐️ <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> starred!</b>
+    return f"""<b>⭐️ On <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> stars count changed!</b>
 
 Total stars: <i>{res["repository"]["stargazers_count"]}</i>
+User: <i>@{res["sender"]["login"]}</i>
     """

@@ -21,7 +21,7 @@ async def webhook(req: Request, code: str):
     if not integration:
         return {"message": "Integration not found!"}
 
-    chat = await Chat.get_chat(integration.chat_id)
+    chat = await Chat.get_by_integration(integration.id)
 
     modified = "\n".join([file for file in res["head_commit"]["modified"]])
 

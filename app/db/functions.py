@@ -86,6 +86,11 @@ class Chat(models.Chat):
     async def remove_topic(cls, chat_id: int):
         await cls.filter(chat_id=chat_id).update(topic_id=None)
 
+    @classmethod
+    async def get_by_integration(cls, integration_id: int) -> list:
+        chats = await cls.all()
+        return [chat for chat in chats if integration_id in chat.integrations]
+
 
 class Integration(models.Integration):
     @classmethod

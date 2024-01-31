@@ -44,8 +44,8 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
     if type(repo) == dict:
         return await message.answer("Repository not found.")
 
-    Integrations = await Chat.get_integrations(message.chat.id)
-    if repo.id in [i["integration_id"] for i in Integrations]:
+    integrations = await Chat.get_integrations(message.chat.id)
+    if repo.id in [i["integration_id"] for i in integrations]:
         return await message.answer("Repository already integrated.")
 
     await Integration.create_integration(repo=repo.full_name)
@@ -57,11 +57,20 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         user_id=user.id,
     )
 
-    if not create_webhook(
+    create = create_webhook(
         config.api.host, integration.code, user.token, repo.full_name
-    ):
+    )
+
+    if not create:
         await message.answer(
             f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(
+            f"Error while creating webhook for repository <code>{repo.full_name}</code>.\n",
+            f"{create['message']}\n\n",
+            f"<code>{create['error']}</code>",
             parse_mode="HTML",
         )
 

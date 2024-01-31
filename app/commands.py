@@ -7,6 +7,7 @@ users_commands = {
     "start": "Start bot",
     "integrate": "Integrate repository",
     "integrations": "Show integrated repositories",
+    "delete": "Delete integration",
 }
 
 owner_commands = {**users_commands, "ping": "Check bot ping", "stats": "Show bot stats"}

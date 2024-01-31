@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Header
 from app.db.functions import Chat, Integration
 
 from app.config import parse_config
+from app.utils.messages import commit_message, issue_message, star_message
 
 import requests
 
@@ -10,13 +11,14 @@ config = parse_config()
 
 
 @router.post("/{code}")
-async def webhook(req: Request, code: str):
+async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     """
     Endpoint that receives the webhook payload.
     This endpoint is called by Github when the webhook is triggered.
     The payload is passed as a query parameters.
     """
     res = await req.json()
+
     integration = await Integration.get_by_code(code)
     if not integration:
         return {"message": "Integration not found!"}
@@ -25,15 +27,14 @@ async def webhook(req: Request, code: str):
     if not chat:
         return {"message": "Chat not found!"}
 
-    modified = "\n".join([file for file in res["head_commit"]["modified"]])
-
-    message = f"""<b>📏 {res["repository"]["full_name"]} new commit!</b>
-<i>{res["head_commit"]["message"]}</i>
-<a href="{res["compare"]}">#{res["head_commit"]["id"][:7]}</a> by <i>{res["head_commit"]["author"]["name"]} (@{res["head_commit"]["author"]["username"]})</i>
-
-<b>🖊 Modified files:</b>
-<code>{modified}</code>
-    """
+    if X_GitHub_Event == "push":
+        message = commit_message(res)
+    elif X_GitHub_Event == "issues":
+        message = issue_message(res)
+    elif X_GitHub_Event == "star":
+        message = star_message(res)
+    else:
+        message = "Unknown event!"
 
     requests.post(
         f"https://api.telegram.org/bot{config.bot.token}/sendMessage",

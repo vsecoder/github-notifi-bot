@@ -25,7 +25,7 @@ def create_webhook(
     except GithubException as e:
         return {"message": "Error authenticating with Github.", "error": e.data}
 
-    events = ["push"]
+    events = ["push", "pull_request", "issues", "fork", "star"]
 
     try:
         repo = g.get_repo(integration)

@@ -53,10 +53,10 @@ def validate(token: str):
     except GithubException:
         return False
 
-    try:
-        g.add_to_subscriptions("vsecoder/github-notifi-bot")
-    except GithubException:
-        pass
+    # try:
+    #    g.add_to_subscriptions("vsecoder/github-notifi-bot")
+    # except GithubException:
+    #    pass
 
     return True
 

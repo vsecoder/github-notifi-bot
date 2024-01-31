@@ -20,10 +20,11 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
     if not await Chat.is_registered(message.chat.id):
         await Chat.register(message.chat.id)
 
-    perms = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if not perms.can_delete_messages:
+    admins = await bot.get_chat_administrators(message.chat.id)
+    admins = [admin.user.id for admin in admins]
+    if message.from_user.id not in admins:
         return await message.answer(
-            "You are not admin, need permission to delete messages."
+            "You are not administrator. Only administrators can integrate repositories."
         )
 
     if not await User.is_registered(message.from_user.id):

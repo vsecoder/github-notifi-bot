@@ -1,6 +1,6 @@
 def commit_message(res):
     modified = "\n".join([file for file in res["head_commit"]["modified"]])
-    return f"""<b>📏 <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}</a> new commit!</b>
+    return f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}</a> new commit!</b>
 <i>{res["head_commit"]["message"]}</i>
 <a href="{res["compare"]}">#{res["head_commit"]["id"][:7]}</a> by <i>{res["head_commit"]["author"]["name"]} (<a href="{res["sender"]["html_url"]}">@{res["head_commit"]["author"]["username"]}</a>)</i>
 

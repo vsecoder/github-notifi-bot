@@ -95,3 +95,45 @@ async def integrations_handler(message: Message):
         text += f"<code>{repo.repo}</code>\n"
 
     await message.answer(text, parse_mode="HTML")
+
+
+@router.message(Command(commands=["delete"]))
+async def delete_handler(message: Message):
+    if message.chat.id == message.from_user.id:
+        return await message.answer(
+            "You can delete integrations only in group or channel."
+        )
+
+    if not await Chat.is_registered(message.chat.id):
+        await Chat.register(message.chat.id)
+
+    if len(message.text.split()) != 2:
+        return await message.answer(
+            "Invalid command. Use <code>/delete repository_name</code>",
+            parse_mode="HTML",
+        )
+
+    if len(repo.split()) != 2:
+        return await message.answer(
+            "Invalid command. Use <code>/delete repository_name</code>",
+            parse_mode="HTML",
+        )
+    repo = message.text.replace("/delete ", "")
+
+    integrations = await Chat.get_integrations(message.chat.id)
+    if repo not in [i["integration_id"] for i in integrations]:
+        return await message.answer("Repository not integrated.")
+
+    integration_id = [
+        i["integration_id"] for i in integrations if i["integration_id"] == repo
+    ][0]
+
+    integration = await Integration.get_by_id(integration_id)
+    await Integration.delete(integration.id)
+
+    await Chat.remove_integration(message.chat.id, integration.id)
+
+    await message.answer(
+        f"Repository <code>{repo}</code> deleted.",
+        parse_mode="HTML",
+    )

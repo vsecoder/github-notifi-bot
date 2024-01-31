@@ -36,6 +36,13 @@ class Chat(models.Chat):
             return False
 
     @classmethod
+    async def get_chat(cls, chat_id: int) -> Union[models.Chat, bool]:
+        try:
+            return await cls.get(chat_id=chat_id)
+        except DoesNotExist:
+            return False
+
+    @classmethod
     async def register(cls, chat_id: int):
         await Chat(chat_id=chat_id).save()
 

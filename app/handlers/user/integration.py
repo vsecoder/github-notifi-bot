@@ -121,14 +121,16 @@ async def delete_handler(message: Message):
     repo = message.text.replace("/delete ", "")
 
     integrations = await Chat.get_integrations(message.chat.id)
-    if repo not in [i["integration_id"] for i in integrations]:
+    integration = None
+
+    for integration in integrations:
+        integration = await Integration.get(id=integration["integration_id"])
+        if integration.repo == repo:
+            break
+
+    if not integration:
         return await message.answer("Repository not integrated.")
 
-    integration_id = [
-        i["integration_id"] for i in integrations if i["integration_id"] == repo
-    ][0]
-
-    integration = await Integration.get_by_id(integration_id)
     await Integration.delete(integration.id)
 
     await Chat.remove_integration(message.chat.id, integration.id)

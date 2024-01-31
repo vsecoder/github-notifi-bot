@@ -7,7 +7,6 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram_dialog import setup_dialogs
 
 from app import db
 from app.arguments import parse_arguments

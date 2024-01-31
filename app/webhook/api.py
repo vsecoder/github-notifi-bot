@@ -9,7 +9,7 @@ router = APIRouter()
 config = parse_config()
 
 
-@router.post("/")
+@router.post("/{code}")
 async def webhook(req: Request, code: str):
     """
     Endpoint that receives the webhook payload.

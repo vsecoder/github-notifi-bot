@@ -124,3 +124,7 @@ class Integration(models.Integration):
     @classmethod
     async def update_last_commit(cls, integration_id: int, commit: str):
         await cls.filter(id=integration_id).update(last_commit=commit)
+
+    @classmethod
+    async def delete(cls, integration_id: int):
+        await cls.filter(id=integration_id).delete()

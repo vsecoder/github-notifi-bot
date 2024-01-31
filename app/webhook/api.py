@@ -27,6 +27,8 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     if not chat:
         return {"message": "Chat not found!"}
 
+    if X_GitHub_Event == "ping":
+        return {"message": "pong"}
     if X_GitHub_Event == "push":
         message = commit_message(res)
     elif X_GitHub_Event == "issues":

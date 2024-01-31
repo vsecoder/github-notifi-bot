@@ -12,6 +12,9 @@ async def text_handler(message: Message):
     if getattr(message, "text", None) is None:
         return
 
+    if message.chat.id != message.from_user.id:
+        return
+
     if not await User.is_registered(message.from_user.id):
         await message.answer(
             "You are not registered. Please, use /start command to register."

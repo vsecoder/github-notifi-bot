@@ -119,7 +119,7 @@ async def delete_handler(message: Message):
             "Invalid command. Use <code>/delete repository_name</code>",
             parse_mode="HTML",
         )
-    repo = message.text.replace("/delete ", "")
+    repo = message.text.split()[1]
 
     integrations = await Chat.get_integrations(message.chat.id)
     integration = None

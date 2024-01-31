@@ -34,7 +34,7 @@ async def webhook(req: Request, code: str):
     """
 
     requests.post(
-        f"https://api.telegram.org/bot{config.bot_token}/sendMessage",
+        f"https://api.telegram.org/bot{config.bot.token}/sendMessage",
         json={
             "chat_id": chat.chat_id,
             "text": message,

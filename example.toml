@@ -1,13 +1,13 @@
 [bot]
-token = "TOKEN"
+token = ""
 
 [database]
 models = ["app.db.functions", "aerich.models"]
 
 [settings]
-owner_id = 123
+owner_id = 1218845111
 throttling_rate = 0.5
 drop_pending_updates = false
 
 [api]
-github_token = ""
+host = "localhost:4454"

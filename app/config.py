@@ -49,6 +49,7 @@ class ConfigApi:
     id: int = 2040
     hash: str = "b18441a1ff607e10a989891a5462e627"
     bot_api_url: str = "https://api.telegram.org"
+    host: str = "localhost:4454"
 
     @property
     def is_local(self):

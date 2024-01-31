@@ -5,11 +5,13 @@ from aiogram.types import Message
 from app.utils.hooks import check_repo, create_webhook
 from app.db.functions import Chat, Integration, User
 
+from app.config import Config
+
 router = Router()
 
 
 @router.message(Command(commands=["integrate"]))
-async def integrate_handler(message: Message, bot: Bot):
+async def integrate_handler(message: Message, bot: Bot, config: Config):
     if message.chat.id == message.from_user.id:
         return await message.answer(
             "You can integrate repository only in group or channel."

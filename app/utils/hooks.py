@@ -16,7 +16,7 @@ def create_webhook(
     """
 
     config = {
-        "url": f"http://{host}/{endpoint}",
+        "url": f"http://{host}/webhook/{endpoint}",
         "content_type": "json",
     }
     try:

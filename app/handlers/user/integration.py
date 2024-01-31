@@ -113,7 +113,7 @@ async def delete_handler(message: Message):
             parse_mode="HTML",
         )
 
-    if len(repo.split()) != 2:
+    if len(message.text.split()) != 2:
         return await message.answer(
             "Invalid command. Use <code>/delete repository_name</code>",
             parse_mode="HTML",

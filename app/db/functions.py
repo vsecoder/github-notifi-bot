@@ -89,7 +89,10 @@ class Chat(models.Chat):
     @classmethod
     async def get_by_integration(cls, integration_id: int) -> list:
         chats = await cls.all()
-        return [chat for chat in chats if integration_id in chat.integrations]
+        for chat in chats:
+            for integration in chat.integrations:
+                if integration["integration_id"] == integration_id:
+                    return chat
 
 
 class Integration(models.Integration):

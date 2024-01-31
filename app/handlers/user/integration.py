@@ -57,18 +57,13 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         user_id=user.id,
     )
 
-    await message.answer(
-        str(
-            create_webhook(
-                "130.61.20.213:4454", integration.code, user.token, repo.full_name
-            )
+    if not create_webhook(
+        config.api.host, integration.code, user.token, repo.full_name
+    ):
+        await message.answer(
+            f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",
+            parse_mode="HTML",
         )
-    )
-
-    # await message.answer(
-    #    f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",
-    #    parse_mode="HTML",
-    # )
 
 
 @router.message(Command(commands=["integrations"]))

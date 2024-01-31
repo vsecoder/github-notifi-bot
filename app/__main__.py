@@ -90,9 +90,7 @@ async def main():
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    registry = setup_dialogs(dp)
-
-    context_kwargs = {"config": config, "registry": registry}
+    context_kwargs = {"config": config}
 
     await dp.start_polling(bot, **context_kwargs)
 

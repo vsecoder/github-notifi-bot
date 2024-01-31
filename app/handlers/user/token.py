@@ -23,4 +23,4 @@ async def cmd_start(message: Message):
 
     await User.write_token(message.from_user.id, token)
 
-    await message.answer("Token saved, /token <token> to change another.")
+    await message.answer("Token saved, /token token to change another.")

@@ -9,7 +9,7 @@ def commit_message(res):
     """
 
 
-def issues_message(res):
+def issue_message(res):
     return f"""<b>📌 <a href="{res['issue']['url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>
 
 <i>{res["issue"]["title"]}</i>

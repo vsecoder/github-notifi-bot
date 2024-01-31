@@ -35,7 +35,30 @@ def create_webhook(
 
 
 def validate(token: str):
-    pass
+    """
+    Validates the specified Github token.
+    This is a programmatic approach to validating tokens with PyGithub's API. If you wish, this can be done
+    manually at your profile's page on Github in the "Settings" section. There is a option there to work with
+    and configure Personal Access Tokens.
+    """
+
+    try:
+        auth = Auth.Token(token)
+        g = Github(auth=auth)
+    except GithubException:
+        return False
+
+    try:
+        g.get_repo("vsecoder/github-notifi-bot")
+    except GithubException:
+        return False
+
+    try:
+        g.add_to_subscriptions("vsecoder/github-notifi-bot")
+    except GithubException:
+        pass
+
+    return True
 
 
 def get_repos(token: str):

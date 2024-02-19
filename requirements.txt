@@ -1,5 +1,5 @@
 aerich
-aiogram==3.0.0
+aiogram==3.4.1
 aiohttp
 aiosqlite
 cachetools

@@ -3,7 +3,7 @@ def commit_message(res):
     created = "\n".join([file for file in res["head_commit"]["added"]])
     removed = "\n".join([file for file in res["head_commit"]["removed"]])
 
-    message = f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}</a>#{res["ref"].split("/")[-1]} new commit!</b>
+    message = f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}:{res["ref"].split("/")[-1]}</a> new commit!</b>
 <i>{res["head_commit"]["message"]}</i>
 <a href="{res["compare"]}">#{res["head_commit"]["id"][:7]}</a> by <i>{res["head_commit"]["author"]["name"]} (<a href="{res["sender"]["html_url"]}">@{res["head_commit"]["author"]["username"]}</a>)</i>
 

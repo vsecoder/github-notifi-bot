@@ -2,7 +2,15 @@ from fastapi import APIRouter, Request, Header
 from app.db.functions import Chat, Integration
 
 from app.config import parse_config
-from app.utils.messages import commit_message, issue_message, star_message
+from app.utils.messages import (
+    commit_message,
+    issue_message,
+    star_message,
+    ping_message,
+    create_message,
+    pull_request_message,
+    fork_message,
+)
 
 import requests
 
@@ -28,13 +36,19 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
         return {"message": "Chat not found!"}
 
     if X_GitHub_Event == "ping":
-        return {"message": "pong"}
+        message = ping_message(res)
     if X_GitHub_Event == "push":
         message = commit_message(res)
     elif X_GitHub_Event == "issues":
         message = issue_message(res)
     elif X_GitHub_Event == "star":
         message = star_message(res)
+    elif X_GitHub_Event == "create":
+        message = create_message(res)
+    elif X_GitHub_Event == "pull_request":
+        message = pull_request_message(res)
+    elif X_GitHub_Event == "fork":
+        message = fork_message(res)
     else:
         message = "Unknown event!"
 

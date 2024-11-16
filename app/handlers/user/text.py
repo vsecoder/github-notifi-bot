@@ -29,14 +29,14 @@ async def text_handler(message: Message):
                 return await message.answer("Invalid token.")
 
             await User.write_token(message.from_user.id, message.text)
-            await message.answer("Token saved, /token <token> to change another.")
+            await message.answer("Token saved, /token token to change another.")
 
             return await message.answer(
                 "Now you can send repository name, for example: <b>hikariatama/Hikka</b>"
             )
 
     repo = check_repo(user.token, message.text)
-    if type(repo) == dict:
+    if type(repo) is dict:
         return await message.answer("Repository not found.")
 
     if message.from_user.id == message.chat.id:

@@ -42,7 +42,7 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         (await User.get(telegram_id=message.from_user.id)).token,
         message.text.split()[1],
     )
-    if type(repo) == dict:
+    if type(repo) is dict:
         return await message.answer("Repository not found.")
 
     integrations = await Chat.get_integrations(message.chat.id)

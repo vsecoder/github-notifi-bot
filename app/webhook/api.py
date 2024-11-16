@@ -50,7 +50,7 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     elif X_GitHub_Event == "fork":
         message = fork_message(res)
     else:
-        message = "Unknown event!"
+        message = f"Unknown event {X_GitHub_Event}!"
 
     requests.post(
         f"https://api.telegram.org/bot{config.bot.token}/sendMessage",

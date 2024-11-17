@@ -1,7 +1,25 @@
+def parse_diff(diff_text):
+    added_lines = 0
+    removed_lines = 0
+
+    diff_lines = diff_text.splitlines()
+    for line in diff_lines:
+        if line.startswith('+') and not line.startswith('+++'):
+            added_lines += 1
+        elif line.startswith('-') and not line.startswith('---'):
+            removed_lines += 1
+
+    return added_lines, removed_lines
+
+
 def commit_message(res):
     modified = "\n".join([file for file in res["head_commit"]["modified"]])
     created = "\n".join([file for file in res["head_commit"]["added"]])
     removed = "\n".join([file for file in res["head_commit"]["removed"]])
+
+    #route = f"https://github.com/{res["repository"]["full_name"]}/commit/{res["head_commit"]["id"]}.patch/"
+    #diff = requests.get(route).text
+    #added_lines, removed_lines = parse_diff(diff)
 
     message = f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}:{res["ref"].split("/")[-1]}</a> new commit!</b>
 <i>{res["head_commit"]["message"]}</i>
@@ -23,7 +41,14 @@ def commit_message(res):
 <code>{modified}</code>
 """
 
+#    if added_lines or removed_lines:
+#        message += f"""<a href="https://diff2html.xyz/demo?diff={route}">Diff:</a>
+#+ {added_lines}
+#- {removed_lines}
+#"""
+
     return message
+
 
 def issue_message(res):
     return f"""<b>📌 On <a href="{res['issue']['url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>

@@ -52,13 +52,18 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     else:
         message = f"Unknown event {X_GitHub_Event}!"
 
+    data = {
+        "chat_id": chat.chat_id,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+    if chat.topic_id:
+        data["reply_to_message_id"] = chat.topic_id
+
     requests.post(
         f"https://api.telegram.org/bot{config.bot.token}/sendMessage",
-        json={
-            "chat_id": chat.chat_id,
-            "text": message,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        },
+        json=data,
     )
     return {"message": "Webhook triggered!"}

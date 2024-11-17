@@ -140,3 +140,30 @@ async def delete_handler(message: Message):
         f"Repository <code>{repo}</code> deleted.",
         parse_mode="HTML",
     )
+
+
+@router.message(Command(commands=["set_topic"]))
+async def set_topic_handler(message: Message, bot: Bot, config: Config):
+    if message.chat.id == message.from_user.id:
+        return await message.answer(
+            "You can set topic only in group or channel."
+        )
+
+    if not await Chat.is_registered(message.chat.id):
+        await Chat.register(message.chat.id)
+
+    admins = await bot.get_chat_administrators(message.chat.id)
+    admins = [admin.user.id for admin in admins]
+    if message.from_user.id not in admins:
+        return await message.answer(
+            "You are not administrator. Only administrators can set topic."
+        )
+
+    topic_id = message.message_thread_id
+
+    if not topic_id:
+        return await message.answer("This message is not in thread.")
+    
+    await Chat.set_topic(message.chat.id, topic_id)
+
+    await message.answer("Topic set.")

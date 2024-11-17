@@ -9,6 +9,7 @@ users_commands = {
     "integrations": "Show integrated repositories",
     "delete": "Delete integration",
     "token": "Set GitHub token",
+    "set_topic": "Set notification topic",
 }
 
 

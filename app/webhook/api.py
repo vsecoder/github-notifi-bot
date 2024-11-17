@@ -37,7 +37,7 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
 
     if X_GitHub_Event == "ping":
         message = ping_message(res)
-    if X_GitHub_Event == "push":
+    elif X_GitHub_Event == "push":
         message = commit_message(res)
     elif X_GitHub_Event == "issues":
         message = issue_message(res)

@@ -27,9 +27,9 @@ class User(models.User):
         await cls.filter(telegram_id=telegram_id).update(token=token)
 
     @classmethod
-    async def get_by_id(cls, telegram_id: int) -> Union[models.User, bool]:
+    async def get_by_id(cls, id: int) -> Union[models.User, bool]:
         try:
-            return await cls.get(telegram_id=telegram_id)
+            return await cls.get(id=id)
         except DoesNotExist:
             return False
 

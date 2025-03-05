@@ -51,7 +51,13 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     if not chat:
         return {"message": "Chat not found!"}
 
-    user = await User.get_by_id(integration.user_id)
+    user_id = [
+        integration
+        for integration in chat.integrations
+        if integration.integration_id == integration.id
+    ][0].user_id
+
+    user = await User.get_by_id(user_id)
     if not user:
         return {"message": "User not found!"}
 

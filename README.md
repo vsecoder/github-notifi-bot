@@ -6,12 +6,12 @@ This is a simple bot that will notify you when a new issue, commits, stars, etc.
 
 ## Screenshots
 
-![Screenshot](.github/images/actions.jpg)
+![Screenshot](.github/images/actions.png)
 
 Action messages example
 
 ---
 
-![Screenshot](.github/images/list.jpg)
+![Screenshot](.github/images/list.png)
 
 List of repositories integrated with the bot in chat

@@ -31,28 +31,34 @@ def commit_message(res, user_token):
             added_lines += file.additions
             removed_lines += file.deletions
 
-        commit_message = f"""<b>Commit <a href="{commit_data["url"]}">#{commit_data["id"][:7]}</a> by <i>{commit_data["author"]["name"]} (<a href="https://github.com/{commit_data["author"]["username"]}">@{commit_data["author"]["username"]}</a>)</i></b>
+        commit_message = f"""<blockquote expandable="expandable"><b>Commit <a href="{commit_data["url"]}">#{commit_data["id"][:7]}</a> by <i>{commit_data["author"]["name"]} (<a href="https://github.com/{commit_data["author"]["username"]}">@{commit_data["author"]["username"]}</a>)</i></b>
 <i>{commit_data["message"]}</i>
+
 """
 
         if created:
             commit_message += f"""<b>➕ Created files:</b>
 <code>{created}</code>
+
 """
         if removed:
             commit_message += f"""<b>🗑 Removed files:</b>
 <code>{removed}</code>
+
 """
         if modified:
             commit_message += f"""<b>🖊 Modified files:</b>
 <code>{modified}</code>
+
 """
 
         if added_lines or removed_lines:
             commit_message += f"""<b>⌨️ Diff:</b>
-+ {added_lines} lines added
-- {removed_lines} lines removed
++ {added_lines}
+- {removed_lines}
+
 """
+        commit_message += "</blockquote>"
 
         commits_info.append(commit_message)
 

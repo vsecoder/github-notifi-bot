@@ -1,51 +1,69 @@
-def parse_diff(diff_text):
-    added_lines = 0
-    removed_lines = 0
-
-    diff_lines = diff_text.splitlines()
-    for line in diff_lines:
-        if line.startswith('+') and not line.startswith('+++'):
-            added_lines += 1
-        elif line.startswith('-') and not line.startswith('---'):
-            removed_lines += 1
-
-    return added_lines, removed_lines
+from github import Auth, Github
 
 
-def commit_message(res):
-    modified = "\n".join([file for file in res["head_commit"]["modified"]])
-    created = "\n".join([file for file in res["head_commit"]["added"]])
-    removed = "\n".join([file for file in res["head_commit"]["removed"]])
+def commit_message(res, user_token):
+    # Аутентификация через PyGithub
+    auth = Auth.Token(user_token)
+    g = Github(auth=auth)
 
-    #route = f"https://github.com/{res["repository"]["full_name"]}/commit/{res["head_commit"]["id"]}.patch/"
-    #diff = requests.get(route).text
-    #added_lines, removed_lines = parse_diff(diff)
+    # Получаем репозиторий
+    repo = g.get_repo(res["repository"]["full_name"])
 
-    message = f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}:{res["ref"].split("/")[-1]}</a> new commit!</b>
-<i>{res["head_commit"]["message"]}</i>
-<a href="{res["compare"]}">#{res["head_commit"]["id"][:7]}</a> by <i>{res["head_commit"]["author"]["name"]} (<a href="{res["sender"]["html_url"]}">@{res["head_commit"]["author"]["username"]}</a>)</i>
+    # Собираем информацию о всех коммитах
+    commits_info = []
+    for commit_data in res["commits"]:
+        # Получаем объект коммита
+        commit = repo.get_commit(commit_data["id"])
 
+        # Получаем diff для коммита
+        diff = commit.files  # Список измененных файлов
+        modified_files = [file.filename for file in diff if file.status == "modified"]
+        created_files = [file.filename for file in diff if file.status == "added"]
+        removed_files = [file.filename for file in diff if file.status == "removed"]
+
+        modified = "\n".join(modified_files)
+        created = "\n".join(created_files)
+        removed = "\n".join(removed_files)
+
+        # Получаем общее количество добавленных и удаленных строк
+        added_lines, removed_lines = 0, 0
+        for file in diff:
+            added_lines += file.additions
+            removed_lines += file.deletions
+
+        commit_message = f"""<b>Commit <a href="{commit_data["url"]}">#{commit_data["id"][:7]}</a> by <i>{commit_data["author"]["name"]} (<a href="https://github.com/{commit_data["author"]["username"]}">@{commit_data["author"]["username"]}</a>)</i></b>
+<i>{commit_data["message"]}</i>
 """
 
-    if created:
-        message += f"""<b>➕ Created files:</b>
+        if created:
+            commit_message += f"""<b>➕ Created files:</b>
 <code>{created}</code>
 """
-    if removed:
-        message += f"""<b>🗑 Removed files:</b>
+        if removed:
+            commit_message += f"""<b>🗑 Removed files:</b>
 <code>{removed}</code>
 """
-
-    if modified:
-        message += f"""<b>🖊 Modified files:</b>
+        if modified:
+            commit_message += f"""<b>🖊 Modified files:</b>
 <code>{modified}</code>
 """
 
-#    if added_lines or removed_lines:
-#        message += f"""<a href="https://diff2html.xyz/demo?diff={route}">Diff:</a>
-#+ {added_lines}
-#- {removed_lines}
-#"""
+        if added_lines or removed_lines:
+            commit_message += f"""<b>⌨️ Diff:</b>
++ {added_lines} lines added
+- {removed_lines} lines removed
+"""
+
+        commits_info.append(commit_message)
+
+    # Объединяем информацию о всех коммитах
+    message = f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}:{res["ref"].split("/")[-1]}</a> new commits!</b>
+{len(res["commits"])} commits pushed.
+<a href="{res["compare"]}">Compare changes</a>
+
+"""
+
+    message += "\n".join(commits_info)
 
     return message
 
@@ -71,10 +89,19 @@ def ping_message(res):
 
 
 def pull_request_message(res):
+    body = res["pull_request"]["body"] if res["pull_request"]["body"] else "No description"
+
+    if len(body) > 200:
+        body = body[:200] + "..."
+
     return f"""<b>📝 On <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> {res["action"]} pull request!</b>
 
 <i>{res["pull_request"]["title"]}</i>
+<blockquote expandable="expandable">{body}</blockquote>
 
+User: <a href="{res["sender"]["html_url"]}"><i>@{res["pull_request"]["user"]["login"]}</i></a>
+
+<a href="{res["pull_request"]["html_url"]}">#{res["pull_request"]["number"]}</a>
 """
 
 

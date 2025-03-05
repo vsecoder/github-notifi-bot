@@ -26,6 +26,13 @@ class User(models.User):
     async def write_token(cls, telegram_id: int, token: str):
         await cls.filter(telegram_id=telegram_id).update(token=token)
 
+    @classmethod
+    async def get_by_id(cls, telegram_id: int) -> Union[models.User, bool]:
+        try:
+            return await cls.get(telegram_id=telegram_id)
+        except DoesNotExist:
+            return False
+
 
 class Chat(models.Chat):
     @classmethod

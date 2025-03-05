@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Header
-from app.db.functions import Chat, Integration
+from app.db.functions import Chat, Integration, User
 
 from app.config import parse_config
 from app.utils.messages import (
@@ -12,10 +12,26 @@ from app.utils.messages import (
     fork_message,
 )
 
+import time
 import requests
 
 router = APIRouter()
 config = parse_config()
+
+
+floodwait = 3 # Seconds to wait between messages
+floodwait_cache = {} # Cache to avoid sending too many messages
+
+
+def check_floodwait(chat_id):
+    """
+    Write a timestamp in the cache if the user has not sent a message in the last floodwait seconds.
+    """
+    if chat_id in floodwait_cache:
+        if time.time() - floodwait_cache[chat_id] < floodwait:
+            return True
+    floodwait_cache[chat_id] = time.time()
+    return False
 
 
 @router.post("/{code}")
@@ -35,13 +51,19 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     if not chat:
         return {"message": "Chat not found!"}
 
+    user = await User.get_by_id(integration.user_id)
+    if not user:
+        return {"message": "User not found!"}
+
     if X_GitHub_Event == "ping":
         message = ping_message(res)
     elif X_GitHub_Event == "push":
-        message = commit_message(res)
+        message = commit_message(res, user.token)
     elif X_GitHub_Event == "issues":
         message = issue_message(res)
     elif X_GitHub_Event == "star":
+        if check_floodwait(chat.chat_id):
+            return {"message": "Too many messages!"}
         message = star_message(res)
     elif X_GitHub_Event == "create":
         message = create_message(res)

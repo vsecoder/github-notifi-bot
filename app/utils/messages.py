@@ -37,7 +37,7 @@ def commit_message(res, user_token):
 """
 
         if created:
-            commit_message += f"""<b>➕ Created files:</b>
+            commit_message += f"""<b>🔧 Created files:</b>
 <code>{created}</code>
 
 """
@@ -54,9 +54,8 @@ def commit_message(res, user_token):
 
         if added_lines or removed_lines:
             commit_message += f"""<b>⌨️ Diff:</b>
-+ {added_lines}
-- {removed_lines}
-
+➕ {added_lines}
+➖ {removed_lines}
 """
         commit_message += "</blockquote>"
 

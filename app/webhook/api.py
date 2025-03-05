@@ -54,8 +54,8 @@ async def webhook(req: Request, code: str, X_GitHub_Event: str = Header()):
     user_id = [
         integration
         for integration in chat.integrations
-        if integration.integration_id == integration.id
-    ][0].user_id
+        if integration['integration_id'] == integration.id
+    ][0]['user_id']
 
     user = await User.get_by_id(user_id)
     if not user:

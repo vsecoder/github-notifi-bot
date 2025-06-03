@@ -6,6 +6,9 @@ def commit_message(res, user_token):
     g = Github(auth=auth)
 
     repo = g.get_repo(res["repository"]["full_name"])
+    
+    if not res["commits"]:
+        return f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}:{res["ref"].split("/")[-1]}</a> new empty push"""
 
     commits_info = []
     for commit_data in res["commits"]:

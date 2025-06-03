@@ -7,8 +7,6 @@ class User(Model):
     telegram_id = fields.BigIntField()
     token = fields.CharField(max_length=255, null=True)
 
-    created_at = fields.DatetimeField(auto_now_add=True)
-
 
 class Chat(Model):
     id = fields.BigIntField(pk=True)

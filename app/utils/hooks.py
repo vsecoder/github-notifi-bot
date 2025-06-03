@@ -16,14 +16,14 @@ def create_webhook(
     """
 
     config = {
-        "url": f"http://{host}/webhook/{endpoint}",
+        "url": f"{host}webhook/{endpoint}",
         "content_type": "json",
     }
     try:
         auth = Auth.Token(gh_token)
         g = Github(auth=auth)
     except GithubException as e:
-        return {"message": "Error authenticating with Github.", "error": e.data}
+        return {"message": "Error authenticating with Github, is your token expired? (rewrite the token)", "error": e.data}
 
     events = ["push", "pull_request", "issues", "fork", "star"]
 
@@ -31,7 +31,7 @@ def create_webhook(
         repo = g.get_repo(integration)
         repo.create_hook("web", config, events, active=True)
     except GithubException as e:
-        return {"message": "Error creating webhook.", "error": e.data}
+        return {"message": "Error creating webhook, please check your token rights.", "error": e.data}
 
 
 def validate(token: str):

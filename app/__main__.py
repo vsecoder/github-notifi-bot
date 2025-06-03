@@ -7,6 +7,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from app import db
 from app.arguments import parse_arguments
@@ -78,7 +80,13 @@ async def main():
         )
     )
     token = config.bot.token
-    bot_settings = {"session": session, "parse_mode": "HTML"}
+    bot_settings = {
+        "session": session, 
+        "default": DefaultBotProperties(
+            parse_mode=ParseMode.HTML,
+            link_preview_is_disabled=True,
+        ),
+    }
 
     bot = Bot(token, **bot_settings)
 

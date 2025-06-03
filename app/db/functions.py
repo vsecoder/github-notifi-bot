@@ -43,6 +43,11 @@ class Chat(models.Chat):
             return False
 
     @classmethod
+    async def ensure_registered(cls, chat_id: int):
+        if not await cls.is_registered(chat_id):
+            await cls.create(chat_id=chat_id)
+
+    @classmethod
     async def get_chat(cls, chat_id: int) -> Union[models.Chat, bool]:
         try:
             return await cls.get(chat_id=chat_id)
@@ -51,7 +56,7 @@ class Chat(models.Chat):
 
     @classmethod
     async def register(cls, chat_id: int):
-        await Chat(chat_id=chat_id).save()
+        await cls.create(chat_id=chat_id)
 
     @classmethod
     async def get_count(cls) -> int:
@@ -59,29 +64,44 @@ class Chat(models.Chat):
 
     @classmethod
     async def get_integrations(cls, chat_id: int) -> list:
-        chat = await cls.get(chat_id=chat_id)
-        return chat.integrations
+        chat = await cls.get(chat_id=chat_id).prefetch_related("integrations")
+        return await chat.integrations.all()
 
     @classmethod
-    async def add_integration(cls, chat_id: int, integration_id: int, user_id: int):
+    async def add_integration(cls, chat_id: int, user_id: int, repository_name: str) -> tuple:
         chat = await cls.get(chat_id=chat_id)
-        integrations = chat.integrations
-        integrations.append({"integration_id": integration_id, "user_id": user_id})
-        await cls.filter(chat_id=chat_id).update(integrations=integrations)
+        user = await User.get(id=user_id)
+
+        existing = await Integration.filter(
+            repository_name=repository_name, user=user
+        ).first()
+
+        if existing:
+            integration_token = existing.integration_token
+        else:
+            integration_token = "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=16)
+            )
+
+        return (
+            await Integration.create(
+                chat=chat,
+                user=user,
+                repository_name=repository_name,
+                integration_token=integration_token,
+            ),
+            existing,
+        )
 
     @classmethod
     async def remove_integration(cls, chat_id: int, integration_id: int):
-        chat = await cls.get(chat_id=chat_id)
-        integrations = chat.integrations
-        integrations = [
-            i for i in integrations if i["integration_id"] != integration_id
-        ]
-        await cls.filter(chat_id=chat_id).update(integrations=integrations)
+        await Integration.filter(chat_id=chat_id, id=integration_id).delete()
 
     @classmethod
-    async def get_topic(cls, chat_id: int) -> Union[models.Chat, bool]:
+    async def get_topic(cls, chat_id: int) -> Union[int, bool]:
         try:
-            return await cls.get(chat_id=chat_id)
+            chat = await cls.get(chat_id=chat_id)
+            return chat.topic_id
         except DoesNotExist:
             return False
 
@@ -94,12 +114,11 @@ class Chat(models.Chat):
         await cls.filter(chat_id=chat_id).update(topic_id=None)
 
     @classmethod
-    async def get_by_integration(cls, integration_id: int) -> list:
-        chats = await cls.all()
-        for chat in chats:
-            for integration in chat.integrations:
-                if integration["integration_id"] == integration_id:
-                    return chat
+    async def get_by_integration(cls, integration_id: int) -> Union[models.Chat, None]:
+        integration = await Integration.get(id=integration_id).prefetch_related(
+            "chat"
+        )
+        return integration.chat
 
 
 class Integration(models.Integration):
@@ -108,25 +127,47 @@ class Integration(models.Integration):
         return await cls.all().count()
 
     @classmethod
-    async def get_by_code(cls, code: str) -> Union[models.Integration, bool]:
-        try:
-            return await cls.get(code=code)
-        except DoesNotExist:
-            return False
-
-    @classmethod
-    async def get_by_id(cls, integration_id: int) -> Union[models.Integration, bool]:
+    async def get_by_id(cls, integration_id: int) -> Union[models.Integration, None]:
         try:
             return await cls.get(id=integration_id)
         except DoesNotExist:
-            return False
+            return None
 
     @classmethod
-    async def create_integration(cls, repo: str) -> models.Integration:
-        return await cls(
-            repo=repo,
-            code="".join(random.choices(string.ascii_uppercase + string.digits, k=16)),
-        ).save()
+    async def get_by_repo(cls, repository_name: str) -> list:
+        return await cls.filter(repository_name=repository_name).all()
+
+    @classmethod
+    async def get_by_chat_and_repo(
+        cls, chat_id: int, repo_name: str
+    ) -> Union[models.Integration, None]:
+        try:
+            chat = await Chat.get(chat_id=chat_id)
+            return await cls.get(chat=chat, repository_name=repo_name)
+        except DoesNotExist:
+            return None
+
+    @classmethod
+    async def create_integration(
+        cls,
+        repository_name: str,
+        chat_id: int,
+        user_id: int,
+        integration_token: str = None,
+    ):
+        chat = await Chat.get(chat_id=chat_id)
+        user = await User.get(id=user_id)
+        if integration_token is None:
+            integration_token = "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=16)
+            )
+
+        return await cls.create(
+            repository_name=repository_name,
+            chat=chat,
+            user=user,
+            integration_token=integration_token,
+        )
 
     @classmethod
     async def update_last_commit(cls, integration_id: int, commit: str):
@@ -135,3 +176,11 @@ class Integration(models.Integration):
     @classmethod
     async def delete(cls, integration_id: int):
         await cls.filter(id=integration_id).delete()
+
+    @classmethod
+    async def get_by_token(cls, token: str) -> list:
+        return (
+            await cls.filter(integration_token=token)
+            .prefetch_related("chat", "user")
+            .all()
+        )

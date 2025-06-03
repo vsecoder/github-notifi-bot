@@ -1,6 +1,6 @@
 aerich
-aiogram==3.0.0
-aiohttp
+aiogram==3.20.0
+aiohttp==3.11.0
 aiosqlite
 cachetools
 coloredlogs
@@ -10,3 +10,4 @@ tortoise-orm
 PyGithub
 fastapi
 uvicorn
+coloredlogs

@@ -12,8 +12,7 @@ router = Router()
 async def cmd_start(message: Message):
     if len(message.text.split()) != 2:
         return await message.answer(
-            "Invalid command. Use <code>/token token</code>",
-            parse_mode="HTML",
+            "Invalid command. Use <code>/token token</code>"
         )
 
     token = message.text.split()[1]

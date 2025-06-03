@@ -2,21 +2,16 @@ from github import Auth, Github
 
 
 def commit_message(res, user_token):
-    # Аутентификация через PyGithub
     auth = Auth.Token(user_token)
     g = Github(auth=auth)
 
-    # Получаем репозиторий
     repo = g.get_repo(res["repository"]["full_name"])
 
-    # Собираем информацию о всех коммитах
     commits_info = []
     for commit_data in res["commits"]:
-        # Получаем объект коммита
         commit = repo.get_commit(commit_data["id"])
 
-        # Получаем diff для коммита
-        diff = commit.files  # Список измененных файлов
+        diff = commit.files
         modified_files = [file.filename for file in diff if file.status == "modified"]
         created_files = [file.filename for file in diff if file.status == "added"]
         removed_files = [file.filename for file in diff if file.status == "removed"]
@@ -25,7 +20,6 @@ def commit_message(res, user_token):
         created = "\n".join(created_files)
         removed = "\n".join(removed_files)
 
-        # Получаем общее количество добавленных и удаленных строк
         added_lines, removed_lines = 0, 0
         for file in diff:
             added_lines += file.additions
@@ -61,7 +55,6 @@ def commit_message(res, user_token):
 
         commits_info.append(commit_message)
 
-    # Объединяем информацию о всех коммитах
     message = f"""<b>📏 On <a href="{res["repository"]["html_url"]}">{res["repository"]["full_name"]}:{res["ref"].split("/")[-1]}</a> new commits!</b>
 {len(res["commits"])} commits pushed.
 <a href="{res["compare"]}">Compare changes</a>

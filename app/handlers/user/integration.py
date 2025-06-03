@@ -4,8 +4,9 @@ from aiogram.types import Message
 
 from app.utils.hooks import check_repo, create_webhook
 from app.db.functions import Chat, Integration, User
-
 from app.config import Config
+
+import html
 
 router = Router()
 
@@ -17,11 +18,11 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
             "You can integrate repository only in group or channel."
         )
 
-    if not await Chat.is_registered(message.chat.id):
-        await Chat.register(message.chat.id)
+    await Chat.ensure_registered(message.chat.id)
 
-    admins = await bot.get_chat_administrators(message.chat.id)
-    admins = [admin.user.id for admin in admins]
+    admins = [
+        admin.user.id for admin in await bot.get_chat_administrators(message.chat.id)
+    ]
     if message.from_user.id not in admins:
         return await message.answer(
             "You are not administrator. Only administrators can integrate repositories."
@@ -32,48 +33,48 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
             "You are not registered. Please, use /start command in private chat with me to register."
         )
 
-    if len(message.text.split()) != 2:
+    parts = message.text.split()
+    if len(parts) != 2:
         return await message.answer(
-            "Invalid command. Use <code>/integrate repository_name</code>",
-            parse_mode="HTML",
+            "Invalid command. Use <code>/integrate repository_name</code>"
         )
+    repo_name = parts[1]
 
-    repo = check_repo(
-        (await User.get(telegram_id=message.from_user.id)).token,
-        message.text.split()[1],
-    )
-    if type(repo) is dict:
+    user = await User.get(telegram_id=message.from_user.id)
+    repo = check_repo(user.token, repo_name)
+    if isinstance(repo, dict):
         return await message.answer("Repository not found.")
 
-    integrations = await Chat.get_integrations(message.chat.id)
-    if repo.id in [i["integration_id"] for i in integrations]:
+    existing = await Integration.get_by_chat_and_repo(
+        chat_id=message.chat.id, repo_name=repo_name
+    )
+    if existing:
         return await message.answer("Repository already integrated.")
 
-    await Integration.create_integration(repo=repo.full_name)
-    integration = await Integration.get(repo=repo.full_name)
-    user = await User.get(telegram_id=message.from_user.id)
-    await Chat.add_integration(
+    integration, exiting = await Chat.add_integration(
         chat_id=message.chat.id,
-        integration_id=integration.id,
         user_id=user.id,
+        repository_name=repo_name,
     )
 
-    create = create_webhook(
-        config.api.host, integration.code, user.token, repo.full_name
-    )
+    if not exiting:
+        result = create_webhook(
+            config.api.host, integration.integration_token, user.token, repo_name
+        )
 
-    if not create:
-        await message.answer(
-            f"Repository <code>{repo.full_name}</code> integrated. Now you will receive notifications about new commits.",
-            parse_mode="HTML",
-        )
-    else:
-        await message.answer(
-            f"Error while creating webhook for repository <code>{repo.full_name}</code>.\n",
-            f"{create['message']}\n\n",
-            f"<code>{create['error']}</code>",
-            parse_mode="HTML",
-        )
+        if result:
+            await message.answer(
+                f"Error while creating webhook for repository <code>{repo_name}</code>.\n"
+                f"{html.escape(result['message'])}\n\n"
+            )
+            await message.answer(
+                f"<code>{result['error']}</code>"
+            )
+            return
+
+    return await message.answer(
+        f"Repository <code>{repo_name}</code> integrated. Now you will receive notifications about new commits.",
+    )
 
 
 @router.message(Command(commands=["integrations"]))
@@ -83,19 +84,17 @@ async def integrations_handler(message: Message):
             "You can get integrations only in group or channel."
         )
 
-    if not await Chat.is_registered(message.chat.id):
-        await Chat.register(message.chat.id)
+    await Chat.ensure_registered(message.chat.id)
 
-    Integrations = await Chat.get_integrations(message.chat.id)
-    if not Integrations:
+    integrations = await Chat.get_integrations(message.chat.id)
+    if not integrations:
         return await message.answer("No integrations.")
 
     text = "<b>Integrations:</b>\n\n"
-    for integration in Integrations:
-        repo = await Integration.get(id=integration["integration_id"])
-        text += f"<code>{repo.repo}</code>\n"
+    for integration in integrations:
+        text += f"<code>{integration.repository_name}</code>\n"
 
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text)
 
 
 @router.message(Command(commands=["delete"]))
@@ -105,65 +104,47 @@ async def delete_handler(message: Message):
             "You can delete integrations only in group or channel."
         )
 
-    if not await Chat.is_registered(message.chat.id):
-        await Chat.register(message.chat.id)
+    await Chat.ensure_registered(message.chat.id)
 
-    if len(message.text.split()) != 2:
+    parts = message.text.split()
+    if len(parts) != 2:
         return await message.answer(
-            "Invalid command. Use <code>/delete repository_name</code>",
-            parse_mode="HTML",
+            "Invalid command. Use <code>/delete repository_name</code>"
         )
+    repo_name = parts[1]
 
-    if len(message.text.split()) != 2:
-        return await message.answer(
-            "Invalid command. Use <code>/delete repository_name</code>",
-            parse_mode="HTML",
-        )
-    repo = message.text.split()[1]
-
-    integrations = await Chat.get_integrations(message.chat.id)
-    integration = None
-
-    for integration in integrations:
-        integration = await Integration.get(id=integration["integration_id"])
-        if integration.repo == repo:
-            break
-
+    integration = await Integration.get_by_chat_and_repo(
+        chat_id=message.chat.id, repo_name=repo_name
+    )
     if not integration:
         return await message.answer("Repository not integrated.")
 
     await Integration.delete(integration.id)
 
-    await Chat.remove_integration(message.chat.id, integration.id)
-
     await message.answer(
-        f"Repository <code>{repo}</code> deleted.",
-        parse_mode="HTML",
+        f"Repository <code>{repo_name}</code> deleted.",
     )
 
 
 @router.message(Command(commands=["set_topic"]))
 async def set_topic_handler(message: Message, bot: Bot, config: Config):
     if message.chat.id == message.from_user.id:
-        return await message.answer(
-            "You can set topic only in group or channel."
-        )
+        return await message.answer("You can set topic only in group or channel.")
 
-    if not await Chat.is_registered(message.chat.id):
-        await Chat.register(message.chat.id)
+    await Chat.ensure_registered(message.chat.id)
 
-    admins = await bot.get_chat_administrators(message.chat.id)
-    admins = [admin.user.id for admin in admins]
+    admins = [
+        admin.user.id for admin in await bot.get_chat_administrators(message.chat.id)
+    ]
     if message.from_user.id not in admins:
         return await message.answer(
             "You are not administrator. Only administrators can set topic."
         )
 
     topic_id = message.message_thread_id
-
     if not topic_id:
         return await message.answer("This message is not in thread.")
-    
+
     await Chat.set_topic(message.chat.id, topic_id)
 
     await message.answer("Topic set.")

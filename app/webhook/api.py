@@ -79,7 +79,7 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
         chat = integration.chat
         user = integration.user
 
-        if not await EventSetting.is_enabled(chat.id, X_GitHub_Event):
+        if not await EventSetting.is_enabled(chat.chat_id, X_GitHub_Event):
             continue
 
         if X_GitHub_Event == "star" and check_floodwait(chat.chat_id, chat.floodwait):

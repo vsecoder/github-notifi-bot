@@ -27,7 +27,7 @@ def build_keyboard(settings: list[EventSetting]) -> InlineKeyboardMarkup:
 
 @router.message(Command("events"))
 async def show_event_settings(message: Message):
-    chat, _ = await Chat.get_or_create(chat_id=message.chat.id)
+    chat = await Chat.get(chat_id=message.chat.id)
 
     existing = await EventSetting.filter(chat=chat)
     if not existing:

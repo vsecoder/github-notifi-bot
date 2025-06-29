@@ -3,7 +3,8 @@ from typing import Union
 from tortoise.exceptions import DoesNotExist
 
 from app.db import models
-import string, random
+import string
+import random
 
 
 class User(models.User):
@@ -184,3 +185,31 @@ class Integration(models.Integration):
             .prefetch_related("chat", "user")
             .all()
         )
+
+
+class EventSetting(models.Model):
+    @classmethod
+    async def init_for_chat(cls, chat_id: int) -> list["EventSetting"]:
+        return await cls.bulk_create(
+            [
+                cls(chat_id=chat_id, event_type=event_type, enabled=True)
+                for event_type in models.EventType
+            ]
+        )
+
+    @classmethod
+    async def enable(cls, chat_id: int, event_type: models.EventType) -> None:
+        await cls.update_or_create(
+            defaults={"enabled": True}, chat_id=chat_id, event_type=event_type
+        )
+
+    @classmethod
+    async def disable(cls, chat_id: int, event_type: models.EventType) -> None:
+        await cls.update_or_create(
+            defaults={"enabled": False}, chat_id=chat_id, event_type=event_type
+        )
+
+    @classmethod
+    async def is_enabled(cls, chat_id: int, event_type: models.EventType) -> bool:
+        setting = await cls.get_or_none(chat_id=chat_id, event_type=event_type)
+        return setting.enabled if setting else True

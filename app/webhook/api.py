@@ -1,6 +1,7 @@
+import time
+import requests
 from fastapi import APIRouter, Request, Header
-from app.db.functions import Integration
-
+from app.db.functions import Integration, EventSetting
 from app.config import parse_config
 from app.utils.messages import (
     commit_message,
@@ -12,77 +13,80 @@ from app.utils.messages import (
     fork_message,
 )
 
-import time
-import requests
-
 router = APIRouter()
 config = parse_config()
 
-
-floodwait = 3
-floodwait_cache = {}
+floodwait_cache: dict[int, float] = {}
 
 
-def check_floodwait(chat_id):
-    """
-    Write a timestamp in the cache if the user has not sent a message in the last floodwait seconds.
-    """
-    if chat_id in floodwait_cache:
-        if time.time() - floodwait_cache[chat_id] < floodwait:
-            return True
-    floodwait_cache[chat_id] = time.time()
+def check_floodwait(chat_id: int, floodwait: int = 3) -> bool:
+    now = time.time()
+    if (last := floodwait_cache.get(chat_id)) and now - last < floodwait:
+        return True
+    floodwait_cache[chat_id] = now
     return False
+
+
+def build_message(event: str, payload: dict, user_token: str | None) -> str | None:
+    match event:
+        case "ping":
+            return ping_message(payload)
+        case "push":
+            return commit_message(payload, user_token)
+        case "issues":
+            return issue_message(payload)
+        case "star":
+            return star_message(payload)
+        case "create":
+            return create_message(payload)
+        case "pull_request":
+            return pull_request_message(payload)
+        case "fork":
+            return fork_message(payload)
+        case _:
+            return f"Unknown event: {event}"
+
+
+def send_message(chat_id: int, topic_id: int | None, text: str) -> None:
+    data = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if topic_id:
+        data["reply_to_message_id"] = topic_id
+
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{config.bot.token}/sendMessage",
+            json=data,
+            timeout=3,
+        )
+    except requests.RequestException as e:
+        print(f"Error sending to chat {chat_id}: {e}")
 
 
 @router.post("/{token}")
 async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
-    res = await req.json()
-
+    payload = await req.json()
     integrations = await Integration.get_by_token(token)
+
     if not integrations:
         return {"message": "No integrations found!"}
 
-    message = None
     for integration in integrations:
         chat = integration.chat
         user = integration.user
 
-        if X_GitHub_Event == "ping":
-            message = ping_message(res)
-        elif X_GitHub_Event == "push":
-            message = commit_message(res, user.token)
-        elif X_GitHub_Event == "issues":
-            message = issue_message(res)
-        elif X_GitHub_Event == "star":
-            if check_floodwait(chat.chat_id):
-                continue
-            message = star_message(res)
-        elif X_GitHub_Event == "create":
-            message = create_message(res)
-        elif X_GitHub_Event == "pull_request":
-            message = pull_request_message(res)
-        elif X_GitHub_Event == "fork":
-            message = fork_message(res)
-        else:
-            message = f"Unknown event {X_GitHub_Event}!"
+        if not await EventSetting.is_enabled(chat.id, X_GitHub_Event):
+            continue
 
-        data = {
-            "chat_id": chat.chat_id,
-            "text": message,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }
+        if X_GitHub_Event == "star" and check_floodwait(chat.chat_id, chat.floodwait):
+            continue
 
-        if chat.topic_id:
-            data["reply_to_message_id"] = chat.topic_id
-
-        try:
-            requests.post(
-                f"https://api.telegram.org/bot{config.bot.token}/sendMessage",
-                json=data,
-                timeout=3,
-            )
-        except requests.RequestException as e:
-            print(f"Error sending to chat {chat.chat_id}: {e}")
+        message = build_message(X_GitHub_Event, payload, user.token)
+        if message:
+            send_message(chat.chat_id, chat.topic_id, message)
 
     return {"message": "Webhook processed for all integrations."}

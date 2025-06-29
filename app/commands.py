@@ -10,6 +10,7 @@ users_commands = {
     "delete": "Delete integration",
     "token": "Set GitHub token",
     "set_topic": "Set notification topic",
+    "events": "Setup chat events",
 }
 
 

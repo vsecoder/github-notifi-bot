@@ -1,4 +1,5 @@
 from github import Auth, Github
+from html import escape as _
 
 
 def commit_message(res, user_token):
@@ -29,7 +30,7 @@ def commit_message(res, user_token):
             removed_lines += file.deletions
 
         commit_message = f"""<blockquote expandable="expandable"><b>Commit <a href="{commit_data["url"]}">#{commit_data["id"][:7]}</a> by <i>{commit_data["author"]["name"]} (<a href="https://github.com/{commit_data["author"]["username"]}">@{commit_data["author"]["username"]}</a>)</i></b>
-<i>{commit_data["message"]}</i>
+<i>{_(commit_data["message"])}</i>
 
 """
 
@@ -70,9 +71,9 @@ def commit_message(res, user_token):
 
 
 def issue_message(res):
-    return f"""<b>📌 On <a href="{res['issue']['url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>
+    return f"""<b>📌 On <a href="{res['issue']['html_url']}">{res["repository"]["full_name"]}</a> {res["action"]} issue!</b>
 
-<i>{res["issue"]["title"]}</i>
+<i>{_(res["issue"]["title"])}</i>
 <a href="{res["issue"]["html_url"]}">#{res["issue"]["number"]}</a> by <a href="{res["sender"]["html_url"]}"><i>@{res["issue"]["user"]["login"]}</i></a>
     """
 
@@ -98,7 +99,7 @@ def pull_request_message(res):
     return f"""<b>📝 On <a href="{res['repository']['html_url']}">{res["repository"]["full_name"]}</a> {res["action"]} pull request!</b>
 
 <i>{res["pull_request"]["title"]}</i>
-<blockquote expandable="expandable">{body}</blockquote>
+<blockquote expandable="expandable">{_(body)}</blockquote>
 
 User: <a href="{res["sender"]["html_url"]}"><i>@{res["pull_request"]["user"]["login"]}</i></a>
 

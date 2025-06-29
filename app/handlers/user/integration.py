@@ -36,7 +36,7 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
     parts = message.text.split()
     if len(parts) != 2:
         return await message.answer(
-            "Invalid command. Use <code>/integrate repository_name</code>"
+            "Invalid command. Use <code>/integrate username/repository_name</code>"
         )
     repo_name = parts[1]
 

@@ -42,6 +42,9 @@ def validate(token: str):
     and configure Personal Access Tokens.
     """
 
+    if not token.startswith("ghp_"):
+        return False
+
     try:
         auth = Auth.Token(token)
         g = Github(auth=auth)

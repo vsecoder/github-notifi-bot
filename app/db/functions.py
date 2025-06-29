@@ -211,5 +211,6 @@ class EventSetting(models.Model):
 
     @classmethod
     async def is_enabled(cls, chat_id: int, event_type: models.EventType) -> bool:
-        setting = await cls.get_or_none(chat_id=chat_id, event_type=event_type)
+        chat: Chat = await Chat.get(id=chat_id)
+        setting = await cls.get_or_none(chat=chat, event_type=event_type)
         return setting.enabled if setting else True

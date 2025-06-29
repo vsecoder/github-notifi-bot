@@ -1,7 +1,7 @@
 import time
 import requests
 from fastapi import APIRouter, Request, Header
-from app.db.functions import Integration, EventSetting, Chat
+from app.db.functions import Integration, EventSetting
 from app.config import parse_config
 from app.utils.messages import (
     commit_message,
@@ -77,10 +77,9 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
 
     for integration in integrations:
         chat = integration.chat
-        chat = await Chat.get(id=chat.id)
         user = integration.user
 
-        if not await EventSetting.is_enabled(chat.chat_id, X_GitHub_Event):
+        if not await EventSetting.is_enabled(chat.id, X_GitHub_Event):
             continue
 
         if X_GitHub_Event == "star" and check_floodwait(chat.chat_id, chat.floodwait):

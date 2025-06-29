@@ -7,7 +7,8 @@ from aiogram.types import (
     InlineKeyboardMarkup,
 )
 
-from app.db.models import EventSetting, EventType, Chat
+from app.db.functions import EventSetting, Chat
+from app.db.models import EventType
 
 router = Router()
 
@@ -27,12 +28,13 @@ def build_keyboard(settings: list[EventSetting]) -> InlineKeyboardMarkup:
 
 @router.message(Command("events"))
 async def show_event_settings(message: Message):
-    chat = await Chat.get(chat_id=message.chat.id)
+    chat = await Chat.get_chat(message.chat.id)
+    await EventSetting.init_for_chat(chat.chat_id)
 
-    existing = await EventSetting.filter(chat=chat)
+    existing = await EventSetting.exists(chat)
     if not existing:
-        await EventSetting.init_for_chat(chat.id)
-        existing = await EventSetting.filter(chat=chat)
+        await EventSetting.init_for_chat(chat.chat_id)
+    existing = await EventSetting.exists(chat)
 
     kb = build_keyboard(existing)
     await message.answer(

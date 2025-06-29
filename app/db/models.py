@@ -20,12 +20,10 @@ class User(Model):
     created_at = fields.DatetimeField(auto_now_add=True)
 
 
-class EventSetting(Model):
+class Eventsetting(Model):
     id = fields.BigIntField(pk=True)
-    chat = fields.ForeignKeyField(
-        "models.Chat", related_name="event_settings", on_delete=fields.CASCADE
-    )
-    event_type = fields.CharEnumField(EventType)
+    chat_id = fields.BigIntField()
+    event_type = fields.CharField(max_length=50)
     enabled = fields.BooleanField(default=True)
 
 

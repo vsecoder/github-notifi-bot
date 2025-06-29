@@ -190,12 +190,13 @@ class Integration(models.Integration):
 class EventSetting(models.Model):
     @classmethod
     async def init_for_chat(cls, chat_id: int) -> list["EventSetting"]:
-        return await cls.bulk_create(
-            [
-                cls(chat_id=chat_id, event_type=event_type, enabled=True)
-                for event_type in models.EventType
-            ]
-        )
+        for event_type in models.EventType:
+            setting, created = await cls.get_or_create(
+                chat_id=chat_id, event_type=event_type
+            )
+            if created:
+                setting.enabled = True
+                await setting.save()
 
     @classmethod
     async def enable(cls, chat_id: int, event_type: models.EventType) -> None:
@@ -211,5 +212,13 @@ class EventSetting(models.Model):
 
     @classmethod
     async def is_enabled(cls, chat: Chat, event_type: models.EventType) -> bool:
-        setting = await cls.get_or_none(chat_id=chat.id, event_type=event_type)
-        return setting.enabled if setting else True
+        # setting = await cls.get_or_none(chat=chat, event_type=event_type)
+        setting = await cls.filter(event_type=event_type).prefetch_related("chat")
+        setting = [s for s in setting if s.chat == chat]
+        return setting[0].enabled if setting else False
+
+    @classmethod
+    async def exists(cls, chat: Chat) -> bool:
+        settings = await cls.all().prefetch_related("chat")
+        settings = [s for s in settings if s.chat == chat]
+        return settings

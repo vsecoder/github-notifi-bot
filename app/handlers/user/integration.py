@@ -98,13 +98,21 @@ async def integrations_handler(message: Message):
 
 
 @router.message(Command(commands=["delete"]))
-async def delete_handler(message: Message):
+async def delete_handler(message: Message, bot: Bot):
     if message.chat.id == message.from_user.id:
         return await message.answer(
             "You can delete integrations only in group or channel."
         )
 
     await Chat.ensure_registered(message.chat.id)
+
+    admins = [
+        admin.user.id for admin in await bot.get_chat_administrators(message.chat.id)
+    ]
+    if message.from_user.id not in admins:
+        return await message.answer(
+            "You are not administrator. Only administrators can delete integrations."
+        )
 
     parts = message.text.split()
     if len(parts) != 2:

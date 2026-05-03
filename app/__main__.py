@@ -9,6 +9,7 @@ from aiogram.client.telegram import TelegramAPIServer
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram_dialog import setup_dialogs
 
 from app import db
 from app.arguments import parse_arguments
@@ -24,6 +25,7 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot, config: Config):
     register_middlewares(dp=dispatcher, config=config)
 
     dispatcher.include_router(get_handlers_router())
+    setup_dialogs(dispatcher)
 
     await setup_bot_commands(bot, config)
 

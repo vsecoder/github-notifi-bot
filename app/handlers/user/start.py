@@ -3,6 +3,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 from app.db.functions import User
+from app.keyboards.main_menu import main_menu_keyboard
 
 router = Router()
 
@@ -66,14 +67,20 @@ async def cmd_start(message: Message):
     text = WELCOME_HEADER + REQUIREMENTS
     text += QUICK_START_HAS_TOKEN if user.token else QUICK_START_NEW
 
-    await message.answer(text)
+    await message.answer(text, reply_markup=main_menu_keyboard())
 
 
 @router.message(Command(commands=["help"]))
 async def cmd_help(message: Message):
     user = None
-    if message.from_user is not None and message.chat.id == message.from_user.id:
+    is_dm = (
+        message.from_user is not None and message.chat.id == message.from_user.id
+    )
+    if is_dm and message.from_user is not None:
         user = await User.get_or_none(telegram_id=message.from_user.id)
     text = WELCOME_HEADER + REQUIREMENTS
     text += QUICK_START_HAS_TOKEN if (user and user.token) else QUICK_START_NEW
-    await message.answer(text)
+    if is_dm:
+        await message.answer(text, reply_markup=main_menu_keyboard())
+    else:
+        await message.answer(text)

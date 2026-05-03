@@ -205,24 +205,58 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
     integrations = await Integration.get_by_token(token)
 
     if not integrations:
-        return {"message": "No integrations found!"}
+        logging.info(
+            "PAT webhook %s for token %s…: no matching integrations",
+            X_GitHub_Event,
+            token[:6],
+        )
+        return {"status": "ok", "matched": 0, "sent": 0}
 
+    sent = 0
+    skipped_event = 0
+    skipped_floodwait = 0
+    skipped_no_message = 0
     async with aiohttp.ClientSession() as session:
         for integration in integrations:
             chat = integration.chat
             user = integration.user
 
             if not await EventSetting.is_enabled(chat.chat_id, X_GitHub_Event):
+                skipped_event += 1
                 continue
 
             if X_GitHub_Event == "star" and check_floodwait(
                 chat.chat_id, chat.floodwait
             ):
+                skipped_floodwait += 1
                 continue
 
             ctx = EventCtx(user_token=user.token)
             message = build_message(X_GitHub_Event, payload, ctx)
-            if message:
-                await send_message(session, integration, message)
+            if not message:
+                skipped_no_message += 1
+                continue
+            await send_message(session, integration, message)
+            sent += 1
 
-    return {"message": "Webhook processed for all integrations."}
+    logging.info(
+        "PAT webhook %s for token %s…: %d integrations, sent=%d, "
+        "skipped(event=%d floodwait=%d no_msg=%d)",
+        X_GitHub_Event,
+        token[:6],
+        len(integrations),
+        sent,
+        skipped_event,
+        skipped_floodwait,
+        skipped_no_message,
+    )
+    return {
+        "status": "ok",
+        "matched": len(integrations),
+        "sent": sent,
+        "skipped": {
+            "event_disabled": skipped_event,
+            "floodwait": skipped_floodwait,
+            "no_message": skipped_no_message,
+        },
+    }

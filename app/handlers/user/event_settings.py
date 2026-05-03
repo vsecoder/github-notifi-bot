@@ -8,7 +8,6 @@ import asyncio
 import time
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
@@ -20,6 +19,8 @@ from aiogram.types import (
 from app.config import Config
 from app.db.functions import Chat, EventSetting, User
 from app.db.models import EventType
+from app.utils.aiogram_helpers import accessible_message, safe_edit_markup
+from app.utils.group_admin import is_user_admin
 from app.utils.hooks import get_subscribed_events_for
 
 router = Router()
@@ -94,11 +95,6 @@ def build_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     )
-
-
-async def _is_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
-    admins = [admin.user.id for admin in await bot.get_chat_administrators(chat_id)]
-    return user_id in admins
 
 
 async def compute_available_events(
@@ -187,7 +183,7 @@ async def show_event_settings(message: Message, bot: Bot, config: Config):
             "You can manage event settings only in a group or channel."
         )
 
-    if not await _is_admin(bot, message.chat.id, message.from_user.id):
+    if not await is_user_admin(bot, message.chat.id, message.from_user.id):
         return await message.answer(
             "Only administrators can change event settings."
         )
@@ -200,28 +196,24 @@ async def show_event_settings(message: Message, bot: Bot, config: Config):
 async def toggle_event_setting(
     callback: CallbackQuery, bot: Bot, config: Config
 ):
-    msg = callback.message
-    # InaccessibleMessage doesn't expose chat reliably and can't be edited.
-    if msg is None or not isinstance(msg, Message):
+    msg = accessible_message(callback)
+    if msg is None:
         return await callback.answer(
             "Original message is no longer accessible.", show_alert=True
         )
-
-    if not await _is_admin(bot, msg.chat.id, callback.from_user.id):
+    if not await is_user_admin(bot, msg.chat.id, callback.from_user.id):
         return await callback.answer(
             "Only administrators can change event settings.", show_alert=True
         )
-
     if callback.data is None:
         return await callback.answer()
-    event_type_str = callback.data.split(":")[1]
+
     try:
-        event_type = EventType(event_type_str)
+        event_type = EventType(callback.data.split(":")[1])
     except ValueError:
         return await callback.answer("Unknown event type.", show_alert=True)
 
     available = await compute_available_events(msg.chat.id, config.api.host)
-
     setting = await EventSetting.get_or_none(
         chat_id=msg.chat.id, event_type=event_type.value
     )
@@ -244,15 +236,7 @@ async def toggle_event_setting(
     await setting.save()
 
     updated = await EventSetting.for_chat(msg.chat.id)
-    try:
-        await msg.edit_reply_markup(
-            reply_markup=build_keyboard(updated, available)
-        )
-    except TelegramBadRequest as e:
-        # Telegram errors when the new markup matches the current one byte-for-byte.
-        # Harmless — the toggle still persisted in the DB; just acknowledge.
-        if "message is not modified" not in str(e):
-            raise
+    await safe_edit_markup(msg, build_keyboard(updated, available))
     await callback.answer(
         f"{event_type.value} {'enabled' if setting.enabled else 'disabled'}"
     )

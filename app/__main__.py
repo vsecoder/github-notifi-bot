@@ -85,7 +85,7 @@ async def main():
     )
     token = config.bot.token
     bot_settings = {
-        "session": session, 
+        "session": session,
         "default": DefaultBotProperties(
             parse_mode=ParseMode.HTML,
             link_preview_is_disabled=True,

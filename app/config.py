@@ -1,19 +1,25 @@
 # sourcery skip: avoid-builtin-shadow
 import os
-from dataclasses import MISSING, dataclass, fields
 from typing import Optional
 
 import toml
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass
-class ConfigBot:
+class _Section(BaseModel):
+    """Common Pydantic config for every TOML section: ignore unknown keys
+    so adding new fields in the future doesn't break older configs."""
+    model_config = ConfigDict(extra="ignore")
+
+
+class ConfigBot(_Section):
     token: str
-    username: Optional[str] = None  # bot's @username, used for deep-link callbacks
+    # Bot's @username, used for deep-link callbacks (GitHub App Setup URL,
+    # `?startgroup=true`, etc.). Optional but recommended.
+    username: Optional[str] = None
 
 
-@dataclass
-class ConfigDatabase:
+class ConfigDatabase(_Section):
     models: list[str]
     protocol: str = "sqlite"
     file_name: str = "production-database.sqlite3"
@@ -22,12 +28,15 @@ class ConfigDatabase:
     host: Optional[str] = None
     port: Optional[str] = None
 
-    def get_db_url(self):
+    def get_db_url(self) -> str:
         if self.protocol == "sqlite":
             return f"{self.protocol}://{self.file_name}"
-        return f"{self.protocol}://{self.user}:{self.password}@{self.host}:{self.port}"
+        return (
+            f"{self.protocol}://{self.user}:{self.password}"
+            f"@{self.host}:{self.port}"
+        )
 
-    def get_tortoise_config(self):
+    def get_tortoise_config(self) -> dict:
         return {
             "connections": {"default": self.get_db_url()},
             "apps": {
@@ -39,28 +48,25 @@ class ConfigDatabase:
         }
 
 
-@dataclass
-class ConfigSettings:
+class ConfigSettings(_Section):
     owner_id: int
     throttling_rate: float = 0.5
     drop_pending_updates: bool = True
 
 
-@dataclass
-class ConfigApi:
+class ConfigApi(_Section):
     id: int = 2040
     hash: str = "b18441a1ff607e10a989891a5462e627"
     bot_api_url: str = "https://api.telegram.org"
     host: str = "localhost:4454"
 
     @property
-    def is_local(self):
+    def is_local(self) -> bool:
         return self.bot_api_url != "https://api.telegram.org"
 
 
-@dataclass
-class ConfigGitHubApp:
-    """Optional GitHub App credentials. App is "configured" only when
+class ConfigGitHubApp(_Section):
+    """Optional GitHub App credentials. Considered "configured" only when
     ``app_id``, ``slug`` and ``private_key_path`` are all set."""
     app_id: int = 0
     slug: str = ""
@@ -72,48 +78,22 @@ class ConfigGitHubApp:
         return bool(self.app_id and self.slug and self.private_key_path)
 
 
-@dataclass
-class Config:
+class Config(_Section):
     bot: ConfigBot
     database: ConfigDatabase
     settings: ConfigSettings
-    api: ConfigApi
-    github_app: ConfigGitHubApp
-
-    @classmethod
-    def parse(cls, data: dict) -> "Config":
-        sections: dict[str, object] = {}
-
-        for section in fields(cls):
-            section_type = section.type  # type: ignore[assignment]
-            pre: dict[str, object] = {}
-            # Missing section is OK if every field has a default — sections like
-            # [github_app] are optional, the bot works without them.
-            current = data.get(section.name, {})
-
-            for field in fields(section_type):  # type: ignore[arg-type]
-                if field.name in current:
-                    pre[field.name] = current[field.name]
-                elif field.default is not MISSING:
-                    pre[field.name] = field.default
-                else:
-                    raise ValueError(
-                        f"Missing field {field.name} in section {section.name}"
-                    )
-
-            sections[section.name] = section_type(**pre)  # type: ignore[operator]
-
-        return cls(**sections)  # type: ignore[arg-type]
+    # Optional sections — missing in TOML means "use defaults".
+    api: ConfigApi = Field(default_factory=ConfigApi)
+    github_app: ConfigGitHubApp = Field(default_factory=ConfigGitHubApp)
 
 
 def parse_config(config_file: str = "config.toml") -> Config:
     if not os.path.isfile(config_file) and not config_file.endswith(".toml"):
         config_file += ".toml"
-
     if not os.path.isfile(config_file):
-        raise FileNotFoundError(f"Config file not found: {config_file} no such file")
-
+        raise FileNotFoundError(
+            f"Config file not found: {config_file} no such file"
+        )
     with open(config_file, "r") as f:
         data = toml.load(f)
-
-    return Config.parse(dict(data))
+    return Config.model_validate(dict(data))

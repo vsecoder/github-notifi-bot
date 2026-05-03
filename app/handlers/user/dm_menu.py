@@ -28,9 +28,10 @@ from app.keyboards.main_menu import (
     BTN_MY_CHATS,
     BTN_REPOS,
 )
+from app.utils.filters import IS_DM
 
 router = Router()
-router.message.filter(F.chat.type == "private")
+router.message.filter(IS_DM)
 
 
 async def _close_active_dialog(manager: DialogManager) -> None:

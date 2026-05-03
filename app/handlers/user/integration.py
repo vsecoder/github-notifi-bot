@@ -1,28 +1,20 @@
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+from aiogram.types import CallbackQuery, Message
 
 from app.config import Config
 from app.db.functions import Chat, Integration, User
 from app.handlers.user.event_settings import render_events_message
+from app.keyboards.integration import (
+    INTEGRATIONS_HEADER,
+    build_integrations_keyboard,
+    build_management_keyboard,
+)
 from app.services.integration import integrate_repo
+from app.utils.aiogram_helpers import accessible_message, safe_edit_text
+from app.utils.group_admin import get_admin_ids
 
 router = Router()
-
-
-async def _get_admin_ids(bot: Bot, chat_id: int) -> list[int] | None:
-    """Returns admin telegram ids, or None if the bot can't read admins."""
-    try:
-        admins = await bot.get_chat_administrators(chat_id)
-    except (TelegramBadRequest, TelegramForbiddenError):
-        return None
-    return [a.user.id for a in admins]
 
 
 async def _require_group_admin(message: Message, bot: Bot) -> bool:
@@ -35,7 +27,7 @@ async def _require_group_admin(message: Message, bot: Bot) -> bool:
         )
         return False
 
-    admin_ids = await _get_admin_ids(bot, message.chat.id)
+    admin_ids = await get_admin_ids(bot, message.chat.id)
     if admin_ids is None:
         await message.answer(
             "I can't read the admin list in this chat. "
@@ -88,40 +80,16 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
 
 # ---------- /integrations (buttoned) ----------
 
-def _build_integrations_keyboard(
-    integrations: list[Integration],
-) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                text=f"🔌 {i.repository_name}",
-                callback_data=f"integ:open:{i.id}",
-            )
-        ]
-        for i in integrations
-    ]
-    buttons.append(
-        [InlineKeyboardButton(text="✏ Manage events", callback_data="integ:events")]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def _build_management_keyboard(integration_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🗑 Delete from chat",
-                    callback_data=f"integ:del:{integration_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="« Back", callback_data="integ:list"
-                )
-            ],
-        ]
-    )
+def _parse_integration_id(callback: CallbackQuery) -> int | None:
+    if callback.data is None:
+        return None
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        return None
+    try:
+        return int(parts[2])
+    except ValueError:
+        return None
 
 
 @router.message(Command(commands=["integrations"]))
@@ -141,51 +109,42 @@ async def integrations_handler(message: Message):
         return await message.answer("No integrations in this chat yet.")
 
     await message.answer(
-        "<b>Integrations in this chat</b>\n"
-        "Tap a repository to manage it, or <b>Manage events</b> to toggle "
-        "event types.",
-        reply_markup=_build_integrations_keyboard(integrations),
+        INTEGRATIONS_HEADER,
+        reply_markup=build_integrations_keyboard(integrations),
     )
 
 
 @router.callback_query(F.data == "integ:list")
 async def cb_integ_list(callback: CallbackQuery):
-    msg = callback.message
-    if msg is None or not isinstance(msg, Message):
+    msg = accessible_message(callback)
+    if msg is None:
         return await callback.answer(
             "Original message is gone.", show_alert=True
         )
+
     integrations = await Chat.get_integrations(msg.chat.id)
     if not integrations:
-        try:
-            await msg.edit_text("No integrations in this chat anymore.")
-        except TelegramBadRequest:
-            pass
+        await safe_edit_text(msg, "No integrations in this chat anymore.")
         return await callback.answer()
-    try:
-        await msg.edit_text(
-            "<b>Integrations in this chat</b>\n"
-            "Tap a repository to manage it, or <b>Manage events</b> to toggle "
-            "event types.",
-            reply_markup=_build_integrations_keyboard(integrations),
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            raise
+
+    await safe_edit_text(
+        msg,
+        INTEGRATIONS_HEADER,
+        reply_markup=build_integrations_keyboard(integrations),
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("integ:open:"))
 async def cb_integ_open(callback: CallbackQuery):
-    msg = callback.message
-    if msg is None or not isinstance(msg, Message) or callback.data is None:
+    msg = accessible_message(callback)
+    if msg is None:
         return await callback.answer(
             "Original message is gone.", show_alert=True
         )
 
-    try:
-        integ_id = int(callback.data.split(":")[2])
-    except (IndexError, ValueError):
+    integ_id = _parse_integration_id(callback)
+    if integ_id is None:
         return await callback.answer("Bad button data.", show_alert=True)
 
     integration = await Integration.get_by_id(integ_id)
@@ -199,64 +158,51 @@ async def cb_integ_open(callback: CallbackQuery):
         f"<i>Added {integration.created_at:%Y-%m-%d %H:%M} UTC</i>\n"
         f"Auth source: <code>{integration.auth_source}</code>"
     )
-    try:
-        await msg.edit_text(
-            text, reply_markup=_build_management_keyboard(integration.id)
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
-            raise
+    await safe_edit_text(
+        msg, text, reply_markup=build_management_keyboard(integration.id)
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("integ:del:"))
 async def cb_integ_delete(callback: CallbackQuery, bot: Bot):
-    msg = callback.message
-    if msg is None or not isinstance(msg, Message) or callback.data is None:
+    msg = accessible_message(callback)
+    if msg is None:
         return await callback.answer(
             "Original message is gone.", show_alert=True
         )
 
-    admin_ids = await _get_admin_ids(bot, msg.chat.id)
+    admin_ids = await get_admin_ids(bot, msg.chat.id)
     if admin_ids is None or callback.from_user.id not in admin_ids:
         return await callback.answer(
-            "Only chat administrators can delete integrations.", show_alert=True
+            "Only chat administrators can delete integrations.",
+            show_alert=True,
         )
 
-    try:
-        integ_id = int(callback.data.split(":")[2])
-    except (IndexError, ValueError):
+    integ_id = _parse_integration_id(callback)
+    if integ_id is None:
         return await callback.answer("Bad button data.", show_alert=True)
 
     integration = await Integration.get_by_id(integ_id)
     repo_name = integration.repository_name if integration else "?"
-
     if integration is not None:
         await Integration.delete_by_id(integration.id)
 
     integrations = await Chat.get_integrations(msg.chat.id)
     if not integrations:
-        try:
-            await msg.edit_text(
-                f"✅ <code>{repo_name}</code> removed.\n"
-                "No integrations left in this chat.\n\n"
-                "<i>The webhook on GitHub side stays — delete it manually in "
-                "the repo's Settings → Webhooks if you want it gone there too.</i>"
-            )
-        except TelegramBadRequest:
-            pass
+        await safe_edit_text(
+            msg,
+            f"✅ <code>{repo_name}</code> removed.\n"
+            "No integrations left in this chat.\n\n"
+            "<i>The webhook on GitHub side stays — delete it manually in "
+            "the repo's Settings → Webhooks if you want it gone there too.</i>",
+        )
     else:
-        try:
-            await msg.edit_text(
-                f"✅ <code>{repo_name}</code> removed.\n\n"
-                "<b>Integrations in this chat</b>\n"
-                "Tap a repository to manage it, or <b>Manage events</b> to "
-                "toggle event types.",
-                reply_markup=_build_integrations_keyboard(integrations),
-            )
-        except TelegramBadRequest as e:
-            if "message is not modified" not in str(e):
-                raise
+        await safe_edit_text(
+            msg,
+            f"✅ <code>{repo_name}</code> removed.\n\n" + INTEGRATIONS_HEADER,
+            reply_markup=build_integrations_keyboard(integrations),
+        )
     await callback.answer("Deleted.")
 
 
@@ -264,13 +210,13 @@ async def cb_integ_delete(callback: CallbackQuery, bot: Bot):
 async def cb_integ_events(
     callback: CallbackQuery, bot: Bot, config: Config
 ):
-    msg = callback.message
-    if msg is None or not isinstance(msg, Message):
+    msg = accessible_message(callback)
+    if msg is None:
         return await callback.answer(
             "Original message is gone.", show_alert=True
         )
 
-    admin_ids = await _get_admin_ids(bot, msg.chat.id)
+    admin_ids = await get_admin_ids(bot, msg.chat.id)
     if admin_ids is None or callback.from_user.id not in admin_ids:
         return await callback.answer(
             "Only chat administrators can change event settings.",

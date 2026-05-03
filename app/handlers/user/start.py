@@ -38,38 +38,44 @@ HELP = (
 )
 
 
+async def _handle_install_deeplink(arg: str, message: Message) -> bool:
+    """Handle ``/start installed_<installation_id>`` deep-link from the
+    GitHub App Setup-URL callback. Returns True if the arg was a valid
+    install deep-link and the message was sent."""
+    if not arg.startswith("installed_"):
+        return False
+    try:
+        installation_id = int(arg[len("installed_"):])
+    except ValueError:
+        return False
+    inst = await Installation.get_by_installation_id(installation_id)
+    if inst is None:
+        return False
+    await message.answer(
+        f"✅ <b>GitHub App installed</b> for <code>{inst.account_login}</code>.\n\n"
+        "Tap <b>🏢 Repos</b> on the keyboard to see the repositories "
+        "I can now reach.",
+        reply_markup=main_menu_keyboard(),
+    )
+    return True
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject):
     if message.from_user is None:
         return
-    user_id = message.from_user.id
-
-    if message.chat.id != user_id:
+    if message.chat.id != message.from_user.id:
         return await message.answer(
             "Please send /start to me in <b>private chat</b> to register."
         )
 
+    user_id = message.from_user.id
     if not await User.is_registered(user_id):
         await User.register(user_id)
 
     arg = (command.args or "").strip()
-
-    # Deep-link from the GitHub App Setup-URL callback:
-    #   t.me/<bot>?start=installed_<installation_id>
-    if arg.startswith("installed_"):
-        inst = None
-        try:
-            inst_id = int(arg[len("installed_"):])
-            inst = await Installation.get_by_installation_id(inst_id)
-        except ValueError:
-            pass
-        if inst is not None:
-            return await message.answer(
-                f"✅ <b>GitHub App installed</b> for <code>{inst.account_login}</code>.\n\n"
-                "Tap <b>🏢 Repos</b> on the keyboard to see the repositories "
-                "I can now reach.",
-                reply_markup=main_menu_keyboard(),
-            )
+    if await _handle_install_deeplink(arg, message):
+        return
 
     await message.answer(WELCOME, reply_markup=main_menu_keyboard())
 

@@ -1,4 +1,11 @@
-"""push — commits pushed to a branch."""
+"""push — commits pushed to a branch.
+
+File lists (added / removed / modified) come straight out of the webhook
+payload — no API call needed. The line-count diff (`+N / -N`) does need an
+API hit per commit, so we treat it as optional enrichment when the user
+token is available and the call doesn't fail.
+"""
+import logging
 from typing import Optional
 
 from github import Auth, Github
@@ -20,6 +27,11 @@ class Commit(_Base):
     message: str
     url: str
     author: CommitAuthor
+    # GitHub includes these arrays directly in the push payload — see
+    # https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
+    added: list[str] = []
+    removed: list[str] = []
+    modified: list[str] = []
 
 
 class PushEvent(_Base):
@@ -40,14 +52,20 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
     if not event.commits:
         return f"<b>📏 On {repo_link_str} new empty push</b>"
 
+    # Only used to pull `+/-` line counts, which aren't in the webhook payload.
+    # File lists themselves come from the payload — no API call required.
     repo_api = None
     if ctx.user_token:
         try:
             repo_api = Github(auth=Auth.Token(ctx.user_token)).get_repo(
                 event.repository.full_name
             )
-        except Exception:
-            repo_api = None
+        except Exception as e:
+            logging.warning(
+                "Couldn't open repo %s for line-stat enrichment: %s",
+                event.repository.full_name,
+                e,
+            )
 
     blocks = []
     for c in event.commits:
@@ -67,39 +85,40 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
             f"<i>{_e(c.message)}</i>\n"
         )
 
+        # File lists straight from payload.
+        if c.added:
+            block += (
+                f"\n<b>🔧 Created files:</b>\n"
+                f"<code>{_e(chr(10).join(c.added))}</code>\n"
+            )
+        if c.removed:
+            block += (
+                f"\n<b>🗑 Removed files:</b>\n"
+                f"<code>{_e(chr(10).join(c.removed))}</code>\n"
+            )
+        if c.modified:
+            block += (
+                f"\n<b>🖊 Modified files:</b>\n"
+                f"<code>{_e(chr(10).join(c.modified))}</code>\n"
+            )
+
+        # Line counts via API — best-effort enrichment.
         if repo_api is not None:
             try:
                 detail = repo_api.get_commit(c.id)
-                added = [f.filename for f in detail.files if f.status == "added"]
-                removed = [f.filename for f in detail.files if f.status == "removed"]
-                modified = [
-                    f.filename for f in detail.files if f.status == "modified"
-                ]
                 add_lines = sum(f.additions for f in detail.files)
                 del_lines = sum(f.deletions for f in detail.files)
-
-                if added:
-                    block += (
-                        f"\n<b>🔧 Created files:</b>\n"
-                        f"<code>{_e(chr(10).join(added))}</code>\n"
-                    )
-                if removed:
-                    block += (
-                        f"\n<b>🗑 Removed files:</b>\n"
-                        f"<code>{_e(chr(10).join(removed))}</code>\n"
-                    )
-                if modified:
-                    block += (
-                        f"\n<b>🖊 Modified files:</b>\n"
-                        f"<code>{_e(chr(10).join(modified))}</code>\n"
-                    )
                 if add_lines or del_lines:
                     block += (
                         f"\n<b>⌨️ Diff:</b>\n"
                         f"➕ {add_lines}\n➖ {del_lines}\n"
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning(
+                    "Couldn't fetch line counts for commit %s: %s",
+                    c.id[:7],
+                    e,
+                )
 
         block += "</blockquote>"
         blocks.append(block)

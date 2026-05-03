@@ -9,7 +9,7 @@ The PAT message is auto-deleted right after we read it, so the secret doesn't
 linger in the chat history.
 """
 
-from typing import Any
+from typing import Any, Optional
 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -20,6 +20,8 @@ from aiogram_dialog.widgets.text import Const, Format
 
 from app.config import Config
 from app.db.functions import Installation, User
+from app.utils.dialog_helpers import current_user_for_manager as _current_user
+from app.utils.dialog_state import DialogState
 from app.utils.github_app import install_url
 from app.utils.hooks import HookError, validate
 
@@ -30,16 +32,15 @@ class TokenSG(StatesGroup):
     confirm_remove = State()
 
 
+class TokenState(DialogState):
+    """Typed view over TokenSG.dialog_data."""
+    error: Optional[str] = None
+
+
 def _mask(token: str) -> str:
     if len(token) <= 10:
         return "•" * len(token)
     return f"{token[:5]}…{token[-4:]}"
-
-
-async def _current_user(manager: DialogManager) -> User | None:
-    if manager.event.from_user is None:
-        return None
-    return await User.get_or_none(telegram_id=manager.event.from_user.id)
 
 
 async def main_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]:
@@ -88,14 +89,16 @@ async def main_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]
 
 
 async def awaiting_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]:
-    error = dialog_manager.dialog_data.get("error")
+    error = TokenState.load(dialog_manager).error
     return {"error": error or "", "has_error": bool(error)}
 
 
 async def on_update_clicked(
     callback: CallbackQuery, button: Button, manager: DialogManager
 ) -> None:
-    manager.dialog_data.pop("error", None)
+    state = TokenState.load(manager)
+    state.error = None
+    state.save(manager)
     await manager.switch_to(TokenSG.awaiting_token)
 
 
@@ -132,7 +135,9 @@ async def on_remove_confirmed(
 async def on_back_to_main(
     callback: CallbackQuery, button: Button, manager: DialogManager
 ) -> None:
-    manager.dialog_data.pop("error", None)
+    state = TokenState.load(manager)
+    state.error = None
+    state.save(manager)
     await manager.switch_to(TokenSG.main)
 
 
@@ -146,13 +151,17 @@ async def on_token_message(
     except Exception:
         pass
 
+    state = TokenState.load(manager)
+
     result = validate(text)
     if isinstance(result, HookError):
-        manager.dialog_data["error"] = result.message
+        state.error = result.message
+        state.save(manager)
         return  # stay on awaiting_token; getter will surface the error
 
     if message.from_user is None:
-        manager.dialog_data["error"] = "Couldn't identify your Telegram user."
+        state.error = "Couldn't identify your Telegram user."
+        state.save(manager)
         return
 
     user_id = message.from_user.id
@@ -160,7 +169,8 @@ async def on_token_message(
         await User.register(user_id)
     await User.write_token(user_id, text)
 
-    manager.dialog_data.pop("error", None)
+    state.error = None
+    state.save(manager)
     await manager.switch_to(TokenSG.main)
 
 

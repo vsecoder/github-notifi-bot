@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 
@@ -12,6 +13,12 @@ router = APIRouter()
 config = parse_config()
 
 floodwait_cache: dict[int, float] = {}
+
+# Rate-limit DM notifications about delivery failures.
+# Keyed by (telegram_user_id, chat_id) so different chats / different users
+# don't suppress each other.
+_delivery_failure_notified: dict[tuple[int, int], float] = {}
+_NOTIFY_INTERVAL = 1800.0  # 30 minutes
 
 
 def check_floodwait(chat_id: int, floodwait: int = 3) -> bool:
@@ -33,13 +40,67 @@ async def _post_send(
         return response.status, await response.text()
 
 
+async def _notify_owner_of_delivery_failure(
+    session: aiohttp.ClientSession,
+    integration: Integration,
+    failure_summary: str,
+) -> None:
+    """DM the user who set up this integration about a persistent delivery
+    failure. Rate-limited per (user, chat) to avoid spamming on every event
+    while the chat is unreachable."""
+    user = integration.user  # prefetched in get_by_token
+    chat = integration.chat
+    if user is None or chat is None or not user.telegram_id:
+        return
+
+    key = (user.telegram_id, chat.chat_id)
+    now = time.time()
+    last = _delivery_failure_notified.get(key)
+    if last is not None and now - last < _NOTIFY_INTERVAL:
+        return
+    _delivery_failure_notified[key] = now
+
+    text = (
+        "⚠️ <b>I couldn't deliver a notification</b>\n\n"
+        f"Repository: <code>{html.escape(integration.repository_name or '?')}</code>\n"
+        f"Target chat id: <code>{chat.chat_id}</code>\n"
+        f"Error: <code>{html.escape(failure_summary[:300])}</code>\n\n"
+        "Possible causes:\n"
+        "• I was removed from the chat\n"
+        "• The chat was deleted or migrated to a different id\n"
+        "• I lost permissions to write there\n\n"
+        "Run <code>/integrations</code> in that chat to manage, or "
+        "<code>/delete owner/repo</code> there to remove the integration "
+        "if the chat is gone."
+    )
+    data = {
+        "chat_id": user.telegram_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    try:
+        await _post_send(session, data)
+    except aiohttp.ClientError as e:
+        logging.debug(
+            "Couldn't DM owner %s about delivery failure: %s",
+            user.telegram_id,
+            e,
+        )
+
+
 async def send_message(
     session: aiohttp.ClientSession,
-    chat_id: int,
-    topic_id: int | None,
+    integration: Integration,
     text: str,
 ) -> None:
-    data = {
+    chat = integration.chat
+    if chat is None:
+        return
+    chat_id = chat.chat_id
+    topic_id = chat.topic_id
+
+    data: dict = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
@@ -53,6 +114,8 @@ async def send_message(
         if status < 400:
             return
 
+        # Topic deleted / closed — retry without thread so the message at
+        # least lands in General. We don't notify the owner for this case.
         if topic_id and status == 400 and (
             "thread not found" in body.lower() or "topic_closed" in body.lower()
         ):
@@ -66,15 +129,28 @@ async def send_message(
             if status < 400:
                 return
 
+        # Persistent failure: log + DM the owner (5xx is treated as transient
+        # and only logged, since GitHub will keep delivering future events
+        # and the next one might succeed).
         if status == 403:
             logging.warning(
                 "Bot can't write to chat %s (kicked / no permission): %s",
                 chat_id,
                 body,
             )
-        else:
+            await _notify_owner_of_delivery_failure(session, integration, body)
+        elif 400 <= status < 500:
             logging.warning(
                 "Telegram sendMessage to %s returned %s: %s",
+                chat_id,
+                status,
+                body,
+            )
+            await _notify_owner_of_delivery_failure(session, integration, body)
+        else:
+            # 5xx
+            logging.warning(
+                "Telegram sendMessage to %s returned %s (transient): %s",
                 chat_id,
                 status,
                 body,
@@ -107,6 +183,6 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
             ctx = EventCtx(user_token=user.token)
             message = build_message(X_GitHub_Event, payload, ctx)
             if message:
-                await send_message(session, chat.chat_id, chat.topic_id, message)
+                await send_message(session, integration, message)
 
     return {"message": "Webhook processed for all integrations."}

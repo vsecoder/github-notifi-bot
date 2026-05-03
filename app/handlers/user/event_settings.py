@@ -165,6 +165,19 @@ def _stale_events_text(available: set[str] | None) -> str:
     )
 
 
+async def render_events_message(
+    chat_id: int, config: Config
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Build the (text, keyboard) for the events settings UI for a given chat.
+    Used by the /events command and by the 'Events' shortcut on the
+    /integrations menu."""
+    await Chat.ensure_registered(chat_id)
+    available = await _compute_available_events(chat_id, config.api.host)
+    settings = await EventSetting.for_chat(chat_id)
+    text = "✨ Github events settings" + _stale_events_text(available)
+    return text, build_keyboard(settings, available)
+
+
 @router.message(Command("events"))
 async def show_event_settings(message: Message, bot: Bot, config: Config):
     if message.from_user is None:
@@ -179,16 +192,8 @@ async def show_event_settings(message: Message, bot: Bot, config: Config):
             "Only administrators can change event settings."
         )
 
-    await Chat.ensure_registered(message.chat.id)
-
-    available = await _compute_available_events(message.chat.id, config.api.host)
-    settings = await EventSetting.for_chat(message.chat.id)
-
-    text = "✨ Github events settings" + _stale_events_text(available)
-    await message.answer(
-        text,
-        reply_markup=build_keyboard(settings, available),
-    )
+    text, kb = await render_events_message(message.chat.id, config)
+    await message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("toggle_event:"))

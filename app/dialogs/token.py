@@ -14,10 +14,12 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from aiogram_dialog import Dialog, DialogManager, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Cancel, Row
+from aiogram_dialog.widgets.kbd import Button, Cancel, Row, Url
 from aiogram_dialog.widgets.text import Const, Format
 
+from app.config import Config
 from app.db.functions import User
+from app.utils.github_app import install_url
 from app.utils.hooks import HookError, validate
 
 
@@ -41,10 +43,30 @@ async def _current_user(manager: DialogManager) -> User | None:
 
 async def main_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]:
     user = await _current_user(dialog_manager)
+    config: Config = dialog_manager.middleware_data["config"]
+
+    app_url = ""
+    app_configured = config.github_app.is_configured
+    if app_configured and dialog_manager.event.from_user is not None:
+        try:
+            app_url = install_url(config, dialog_manager.event.from_user.id)
+        except RuntimeError:
+            app_configured = False
+
     if user and user.token:
         status = f"✅ Saved (<code>{_mask(user.token)}</code>)"
-        return {"status_line": status, "has_token": True}
-    return {"status_line": "❌ No token saved.", "has_token": False}
+        return {
+            "status_line": status,
+            "has_token": True,
+            "app_configured": app_configured,
+            "app_url": app_url,
+        }
+    return {
+        "status_line": "❌ No token saved.",
+        "has_token": False,
+        "app_configured": app_configured,
+        "app_url": app_url,
+    }
 
 
 async def awaiting_getter(
@@ -127,8 +149,8 @@ async def on_token_message(
 
 
 main_window = Window(
-    Const("🔑 <b>GitHub Token</b>\n"),
-    Format("Status: {status_line}"),
+    Const("🔑 <b>GitHub Connection</b>\n"),
+    Format("PAT: {status_line}"),
     Row(
         Button(Const("🔄 Update"), id="upd", on_click=on_update_clicked),
         Button(
@@ -144,6 +166,12 @@ main_window = Window(
         on_click=on_remove_clicked,
         when="has_token",
     ),
+    Url(
+        text=Const("🔗 Install GitHub App (recommended)"),
+        url=Format("{app_url}"),
+        id="install_app",
+        when="app_configured",
+    ),
     Cancel(Const("❎ Close")),
     state=TokenSG.main,
     getter=main_getter,
@@ -151,10 +179,14 @@ main_window = Window(
 
 awaiting_window = Window(
     Const(
-        "📥 Send your <b>Personal Access Token</b> as a regular message.\n\n"
-        "ℹ️ Required scopes: <code>admin:repo_hook</code> "
-        "(and <code>repo</code> for private repositories).\n"
-        "🔒 The message will be auto-deleted as soon as I receive it."
+        "📥 <b>Send your Personal Access Token</b> as a regular message.\n\n"
+        "📚 <b>How to create a token:</b>\n"
+        "https://telegra.ph/Poluchenie-tokena-GitHub-01-30\n\n"
+        "ℹ️ <b>Required scopes:</b>\n"
+        "• <code>admin:repo_hook</code> — to manage webhooks (always)\n"
+        "• <code>repo</code> — to access private repositories\n\n"
+        "🔒 The message containing your token will be auto-deleted as "
+        "soon as I receive it."
     ),
     Format("\n❌ {error}", when="has_error"),
     MessageInput(on_token_message),

@@ -9,6 +9,7 @@ import toml
 @dataclass
 class ConfigBot:
     token: str
+    username: Optional[str] = None  # bot's @username, used for deep-link callbacks
 
 
 @dataclass
@@ -58,11 +59,26 @@ class ConfigApi:
 
 
 @dataclass
+class ConfigGitHubApp:
+    """Optional GitHub App credentials. App is "configured" only when
+    ``app_id``, ``slug`` and ``private_key_path`` are all set."""
+    app_id: int = 0
+    slug: str = ""
+    private_key_path: str = ""
+    webhook_secret: str = ""
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.app_id and self.slug and self.private_key_path)
+
+
+@dataclass
 class Config:
     bot: ConfigBot
     database: ConfigDatabase
     settings: ConfigSettings
     api: ConfigApi
+    github_app: ConfigGitHubApp
 
     @classmethod
     def parse(cls, data: dict) -> "Config":
@@ -71,7 +87,9 @@ class Config:
         for section in fields(cls):
             section_type = section.type  # type: ignore[assignment]
             pre: dict[str, object] = {}
-            current = data[section.name]
+            # Missing section is OK if every field has a default — sections like
+            # [github_app] are optional, the bot works without them.
+            current = data.get(section.name, {})
 
             for field in fields(section_type):  # type: ignore[arg-type]
                 if field.name in current:

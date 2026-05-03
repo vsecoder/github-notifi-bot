@@ -7,6 +7,7 @@ def get_user_router() -> Router:
     from . import (
         dm_menu,
         event_settings,
+        install,
         integration,
         reinstall,
         start,
@@ -28,6 +29,7 @@ def get_user_router() -> Router:
     # catch-all text handler below.
     router.include_router(get_dialogs_router())
     router.include_router(start.router)
+    router.include_router(install.router)
     router.include_router(token.router)
     # Catch-all DM text handler comes last.
     router.include_router(text.router)

@@ -1,5 +1,10 @@
 [bot]
 token = ""
+# Bot's @username (without @). Required for GitHub App install flow:
+# after the user installs the App, GitHub redirects to our /github/setup,
+# which then redirects to https://t.me/<username>?start=installed_<id>
+# so the user lands back in this bot with a confirmation.
+username = ""
 
 [database]
 models = ["app.db.functions", "aerich.models"]
@@ -11,3 +16,29 @@ drop_pending_updates = false
 
 [api]
 host = "localhost:4454"
+
+# Optional: GitHub App authentication (in addition to / instead of per-user PAT).
+# Leave fields empty / app_id = 0 to keep PAT-only mode.
+#
+# How to fill these:
+#   1. https://github.com/settings/apps  →  New GitHub App
+#   2. Set Webhook URL to:        <your-public-host>/webhook
+#      Set Webhook secret to:     a long random string (paste it below as `webhook_secret`)
+#      Permissions (Repository):  Contents: read, Issues: read, Pull requests: read,
+#                                 Discussions: read, Actions: read, Deployments: read,
+#                                 Metadata: read
+#      Subscribe to events:       push, pull_request, pull_request_review,
+#                                 pull_request_review_comment, issues, issue_comment,
+#                                 commit_comment, fork, star, create, delete, release,
+#                                 workflow_run, discussion, discussion_comment,
+#                                 deployment_status, member, public
+#   3. After creation:
+#      • Copy "App ID"          →  app_id
+#      • Copy slug from URL     →  slug   (the bit after `github.com/apps/`)
+#      • Generate a private key →  save the .pem somewhere outside git, point private_key_path at it
+#
+[github_app]
+app_id = 0
+slug = ""
+private_key_path = "secrets/github-app.pem"
+webhook_secret = ""

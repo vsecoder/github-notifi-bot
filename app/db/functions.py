@@ -174,6 +174,42 @@ class Integration(models.Integration):
         )
 
 
+class Installation(models.Installation):
+    @classmethod
+    async def upsert(
+        cls, installation_id: int, account_login: str, user_id: int
+    ) -> "Installation":
+        """Create or update the installation row. Same Telegram user
+        re-installing on the same GitHub account just refreshes the row."""
+        existing = await cls.get_or_none(installation_id=installation_id)
+        if existing is not None:
+            await cls.filter(id=existing.id).update(
+                account_login=account_login,
+                user_id=user_id,
+            )
+            return await cls.get(installation_id=installation_id)
+        return await cls.create(
+            installation_id=installation_id,
+            account_login=account_login,
+            user_id=user_id,
+        )
+
+    @classmethod
+    async def for_user(cls, user_id: int) -> list["Installation"]:
+        return list(await cls.filter(user_id=user_id))
+
+    @classmethod
+    async def get_by_installation_id(
+        cls, installation_id: int
+    ) -> Optional["Installation"]:
+        return await cls.get_or_none(installation_id=installation_id)
+
+    @classmethod
+    async def delete_by_installation_id(cls, installation_id: int) -> int:
+        """Returns the number of rows deleted (0 if not found)."""
+        return await cls.filter(installation_id=installation_id).delete()
+
+
 class EventSetting(models.Eventsetting):
     @classmethod
     async def init_for_chat(cls, chat_id: int) -> None:

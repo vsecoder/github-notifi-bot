@@ -1,55 +1,45 @@
 from aiogram import Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 
-from app.db.functions import User
+from app.db.functions import Installation, User
 from app.keyboards.main_menu import main_menu_keyboard
 
 router = Router()
 
 
-WELCOME_HEADER = (
+WELCOME = (
     "👋 <b>Hi! I'm a GitHub Notifier bot.</b>\n\n"
-    "I deliver real-time notifications about your repositories "
-    "(commits, issues, pull requests, stars, forks) to Telegram chats — "
-    "<b>via GitHub webhooks</b>.\n"
+    "I deliver real-time notifications from your GitHub repositories — "
+    "commits, pull requests, issues, releases, CI runs and more — into "
+    "Telegram chats via GitHub webhooks.\n\n"
+    "📌 <b>First step:</b> tap <b>🔌 Connect</b> below to authorize me with "
+    "GitHub. Then use <b>➕ Add to chat</b> to invite me to a group, and "
+    "<b>🏢 Repos</b> to pick what to integrate.\n\n"
+    "📦 Source: https://github.com/vsecoder/github-notifi-bot"
 )
 
-REQUIREMENTS = (
-    "\n⚠️ <b>Before you start — important:</b>\n"
-    "• You must be the <b>owner</b> of the repository, or have <b>admin / maintain</b> "
-    "access to it. Only such users can install webhooks. This is a GitHub limitation, "
-    "not a bot one.\n"
-    "• You need a <b>Personal Access Token</b> with these scopes:\n"
-    "    – <code>admin:repo_hook</code> — required (to manage webhooks)\n"
-    "    – <code>repo</code> — required for <b>private</b> repositories\n"
-    "• I have to be added to the target group as an <b>administrator</b>.\n"
-    "\n📚 How to create a token: https://telegra.ph/Poluchenie-tokena-GitHub-01-30\n"
-    "📦 Source code: https://github.com/vsecoder/github-notifi-bot\n"
-)
 
-QUICK_START_NEW = (
-    "\n🚀 <b>Quick start:</b>\n"
-    "1. Send your <b>Personal Access Token</b> to me here in DM.\n"
-    "2. Add me to a group as an <b>administrator</b>.\n"
-    "3. In the group, run: <code>/integrate username/repository</code>\n"
-    "4. Use <code>/events</code> in the group to toggle event types.\n"
-    "5. Use <code>/set_topic</code> in a forum topic if you want notifications "
-    "delivered to a specific topic.\n"
-)
-
-QUICK_START_HAS_TOKEN = (
-    "\n✅ Your token is already saved.\n"
-    "• Add me to a group as <b>administrator</b>.\n"
-    "• Run <code>/integrate username/repository</code> in that group.\n"
-    "• Use <code>/token &lt;new_token&gt;</code> here to replace your token.\n"
-    "• In DM you can also send a repo name like <code>hikariatama/Hikka</code> "
-    "to view its summary.\n"
+HELP = (
+    "<b>Buttons in DM:</b>\n"
+    "• <b>🔌 Connect</b> — manage your GitHub authorization (App or PAT)\n"
+    "• <b>➕ Add to chat</b> — invite me to a group via Telegram's chat picker\n"
+    "• <b>🏢 Repos</b> — browse repositories and integrate them into chats\n"
+    "• <b>💬 My chats</b> — overview of chats with your integrations\n"
+    "• <b>❓ Help</b> — show this message\n\n"
+    "<b>Commands in groups (admins only):</b>\n"
+    "• <code>/integrate owner/repo</code> — add a repo to this chat\n"
+    "• <code>/integrations</code> — list and manage repos integrated here\n"
+    "• <code>/events</code> — toggle which event types are delivered\n"
+    "• <code>/set_topic</code> — deliver to current forum topic\n"
+    "• <code>/reinstall</code> — re-sync GitHub webhook subscriptions\n"
+    "• <code>/delete owner/repo</code> — remove an integration\n\n"
+    "📦 Source: https://github.com/vsecoder/github-notifi-bot"
 )
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, command: CommandObject):
     if message.from_user is None:
         return
     user_id = message.from_user.id
@@ -62,25 +52,35 @@ async def cmd_start(message: Message):
     if not await User.is_registered(user_id):
         await User.register(user_id)
 
-    user = await User.get(telegram_id=user_id)
+    arg = (command.args or "").strip()
 
-    text = WELCOME_HEADER + REQUIREMENTS
-    text += QUICK_START_HAS_TOKEN if user.token else QUICK_START_NEW
+    # Deep-link from the GitHub App Setup-URL callback:
+    #   t.me/<bot>?start=installed_<installation_id>
+    if arg.startswith("installed_"):
+        inst = None
+        try:
+            inst_id = int(arg[len("installed_"):])
+            inst = await Installation.get_by_installation_id(inst_id)
+        except ValueError:
+            pass
+        if inst is not None:
+            return await message.answer(
+                f"✅ <b>GitHub App installed</b> for <code>{inst.account_login}</code>.\n\n"
+                "Tap <b>🏢 Repos</b> on the keyboard to see the repositories "
+                "I can now reach.",
+                reply_markup=main_menu_keyboard(),
+            )
 
-    await message.answer(text, reply_markup=main_menu_keyboard())
+    await message.answer(WELCOME, reply_markup=main_menu_keyboard())
 
 
 @router.message(Command(commands=["help"]))
 async def cmd_help(message: Message):
-    user = None
     is_dm = (
-        message.from_user is not None and message.chat.id == message.from_user.id
+        message.from_user is not None
+        and message.chat.id == message.from_user.id
     )
-    if is_dm and message.from_user is not None:
-        user = await User.get_or_none(telegram_id=message.from_user.id)
-    text = WELCOME_HEADER + REQUIREMENTS
-    text += QUICK_START_HAS_TOKEN if (user and user.token) else QUICK_START_NEW
     if is_dm:
-        await message.answer(text, reply_markup=main_menu_keyboard())
+        await message.answer(HELP, reply_markup=main_menu_keyboard())
     else:
-        await message.answer(text)
+        await message.answer(HELP)

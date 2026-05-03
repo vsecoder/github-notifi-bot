@@ -9,6 +9,7 @@ tgcrypto
 toml
 tortoise-orm
 PyGithub
+pyjwt[crypto]>=2.8
 fastapi
 uvicorn
 coloredlogs

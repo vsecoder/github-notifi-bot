@@ -8,6 +8,7 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 # Button labels are also used as exact-text matchers in dm_menu handlers,
 # so import these constants instead of duplicating the strings.
 BTN_CONNECT = "🔌 Connect"
+BTN_ADD_TO_CHAT = "➕ Add to chat"
 BTN_REPOS = "🏢 Repos"
 BTN_MY_CHATS = "💬 My chats"
 BTN_HELP = "❓ Help"
@@ -16,8 +17,15 @@ BTN_HELP = "❓ Help"
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_CONNECT), KeyboardButton(text=BTN_REPOS)],
-            [KeyboardButton(text=BTN_MY_CHATS), KeyboardButton(text=BTN_HELP)],
+            [
+                KeyboardButton(text=BTN_CONNECT),
+                KeyboardButton(text=BTN_ADD_TO_CHAT),
+            ],
+            [
+                KeyboardButton(text=BTN_REPOS),
+                KeyboardButton(text=BTN_MY_CHATS),
+            ],
+            [KeyboardButton(text=BTN_HELP)],
         ],
         resize_keyboard=True,
         is_persistent=True,

@@ -10,6 +10,7 @@ users_commands = {
     "integrations": "List integrated repositories",
     "delete": "Remove an integration",
     "reinstall": "Re-sync GitHub webhook events for this chat",
+    "install": "Install the GitHub App for your account (DM)",
     "token": "Set or replace your GitHub token (DM)",
     "set_topic": "Send notifications to current forum topic",
     "events": "Toggle event types per chat",

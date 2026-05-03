@@ -13,13 +13,9 @@ FastAPI and Tortoise-ORM.
 
 ![Screenshot](.github/images/actions.png)
 
-Action messages example
+![Screenshot](.github/images/chats.png)
 
----
-
-![Screenshot](.github/images/list.png)
-
-List of repositories integrated with the bot in chat
+![Screenshot](.github/images/repos.png)
 
 ## Features
 

@@ -1,6 +1,6 @@
 # github-notifi-bot
 
-## Description
+![Screenshot](.github/images/mockup.webp)
 
 Telegram bot that delivers real-time notifications about your GitHub repositories
 (commits, pull requests, issues, releases, CI runs, stars, forks and more) to

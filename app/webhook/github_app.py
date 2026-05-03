@@ -107,8 +107,8 @@ async def app_webhook(
     payload = await req.json()
 
     # Top-priority: installation lifecycle. Suspending/deleting wipes the
-    # row so we don't keep stale entries; un-suspending falls through to
-    # the same upsert path /github/setup uses.
+    # row so we don't keep stale entries; ``created`` backfills the account
+    # login if the Setup-URL callback couldn't fetch it (race / API hiccup).
     if x_github_event == "installation":
         action = payload.get("action")
         installation_id = payload.get("installation", {}).get("id")
@@ -123,8 +123,30 @@ async def app_webhook(
                 removed,
             )
             return {"status": "ok", "action": action}
-        # Other actions (created, unsuspend, new_permissions_accepted) —
-        # we already record installations through /github/setup, so just log.
+
+        if installation_id and action == "created":
+            account_login = (
+                payload.get("installation", {})
+                .get("account", {})
+                .get("login")
+            )
+            existing = await Installation.get_by_installation_id(
+                installation_id
+            )
+            if existing is not None and account_login:
+                if existing.account_login != account_login:
+                    await Installation.filter(id=existing.id).update(
+                        account_login=account_login
+                    )
+                    logging.info(
+                        "Backfilled installation %s account_login=%s from webhook payload",
+                        installation_id,
+                        account_login,
+                    )
+            return {"status": "ok", "action": action}
+
+        # Other actions (unsuspend, new_permissions_accepted, …) — we
+        # already record installations through /github/setup, so just log.
         logging.info(
             "Installation event %s for id=%s (no action taken)",
             action,

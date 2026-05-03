@@ -6,7 +6,7 @@ import aiohttp
 from fastapi import APIRouter, Header, Request
 
 from app.config import parse_config
-from app.db.functions import EventSetting, Integration
+from app.db.functions import Chat, EventSetting, Integration
 from app.events import EventCtx, build_message
 
 router = APIRouter()
@@ -57,6 +57,14 @@ async def _notify_owner_of_delivery_failure(
     now = time.time()
     last = _delivery_failure_notified.get(key)
     if last is not None and now - last < _NOTIFY_INTERVAL:
+        logging.info(
+            "Suppressed delivery-failure DM to %s about chat %s "
+            "(last notified %.0fs ago, interval %.0fs)",
+            user.telegram_id,
+            chat.chat_id,
+            now - last,
+            _NOTIFY_INTERVAL,
+        )
         return
     _delivery_failure_notified[key] = now
 
@@ -68,7 +76,8 @@ async def _notify_owner_of_delivery_failure(
         "Possible causes:\n"
         "• I was removed from the chat\n"
         "• The chat was deleted or migrated to a different id\n"
-        "• I lost permissions to write there\n\n"
+        "• I lost permissions to write there\n"
+        "• The forum topic the integration uses was closed\n\n"
         "Run <code>/integrations</code> in that chat to manage, or "
         "<code>/delete owner/repo</code> there to remove the integration "
         "if the chat is gone."
@@ -80,10 +89,23 @@ async def _notify_owner_of_delivery_failure(
         "disable_web_page_preview": True,
     }
     try:
-        await _post_send(session, data)
+        status, body = await _post_send(session, data)
+        if status < 400:
+            logging.info(
+                "Sent delivery-failure DM to %s about chat %s",
+                user.telegram_id,
+                chat.chat_id,
+            )
+        else:
+            logging.warning(
+                "Couldn't DM owner %s about delivery failure: %s — %s",
+                user.telegram_id,
+                status,
+                body,
+            )
     except aiohttp.ClientError as e:
-        logging.debug(
-            "Couldn't DM owner %s about delivery failure: %s",
+        logging.warning(
+            "Network error DM-ing owner %s about delivery failure: %s",
             user.telegram_id,
             e,
         )
@@ -115,10 +137,13 @@ async def send_message(
             return
 
         # Topic deleted / closed — retry without thread so the message at
-        # least lands in General. We don't notify the owner for this case.
+        # least lands in General. We don't notify the owner if the retry
+        # succeeds; if it also fails, fall through to the persistent-failure
+        # branch below which DOES notify.
         if topic_id and status == 400 and (
             "thread not found" in body.lower() or "topic_closed" in body.lower()
         ):
+            thread_gone = "thread not found" in body.lower()
             logging.warning(
                 "Topic %s in chat %s is unavailable, retrying without thread.",
                 topic_id,
@@ -127,6 +152,21 @@ async def send_message(
             data.pop("message_thread_id", None)
             status, body = await _post_send(session, data)
             if status < 400:
+                # Retry to General succeeded. If the thread was *deleted*
+                # (not just closed), drop the dead topic_id from the chat
+                # row so future events don't waste an extra round-trip.
+                if thread_gone:
+                    try:
+                        await Chat.remove_topic(chat_id)
+                        logging.info(
+                            "Cleared dead topic %s from chat %s",
+                            topic_id,
+                            chat_id,
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Couldn't clear topic_id for chat %s", chat_id
+                        )
                 return
 
         # Persistent failure: log + DM the owner (5xx is treated as transient

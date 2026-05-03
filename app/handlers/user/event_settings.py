@@ -101,7 +101,7 @@ async def _is_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
     return user_id in admins
 
 
-async def _compute_available_events(
+async def compute_available_events(
     chat_id: int, host: str
 ) -> set[str] | None:
     """Returns the intersection of events subscribed across all chat
@@ -172,7 +172,7 @@ async def render_events_message(
     Used by the /events command and by the 'Events' shortcut on the
     /integrations menu."""
     await Chat.ensure_registered(chat_id)
-    available = await _compute_available_events(chat_id, config.api.host)
+    available = await compute_available_events(chat_id, config.api.host)
     settings = await EventSetting.for_chat(chat_id)
     text = "✨ Github events settings" + _stale_events_text(available)
     return text, build_keyboard(settings, available)
@@ -220,7 +220,7 @@ async def toggle_event_setting(
     except ValueError:
         return await callback.answer("Unknown event type.", show_alert=True)
 
-    available = await _compute_available_events(msg.chat.id, config.api.host)
+    available = await compute_available_events(msg.chat.id, config.api.host)
 
     setting = await EventSetting.get_or_none(
         chat_id=msg.chat.id, event_type=event_type.value

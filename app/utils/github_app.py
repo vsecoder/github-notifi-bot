@@ -70,11 +70,31 @@ def get_installation_token(config: Config, installation_id: int) -> str:
 
 
 def get_account_for_installation(config: Config, installation_id: int) -> str:
-    """Return the GitHub login (user / org) the installation lives on."""
+    """Return the GitHub login (user / org) the installation lives on.
+
+    PyGithub's ``Installation`` object doesn't reliably expose ``.account``
+    across versions — we hit the raw REST endpoint and read it from JSON.
+    Returns ``"?"`` if the call fails; the ``installation.created`` webhook
+    event will backfill the value when it arrives anyway.
+    """
     gi = get_integration(config)
-    inst = gi.get_app_installation(installation_id)
-    account = inst.account
-    return account.login if account is not None else "?"
+    # ``requester`` is the recommended public attribute in PyGithub 2.x;
+    # name-mangled fallback covers older versions.
+    requester = getattr(gi, "requester", None) or getattr(
+        gi, "_GithubIntegration__requester", None
+    )
+    if requester is None:
+        return "?"
+    try:
+        _, data = requester.requestJsonAndCheck(
+            "GET", f"/app/installations/{installation_id}"
+        )
+    except Exception:
+        return "?"
+    if not isinstance(data, dict):
+        return "?"
+    account = data.get("account") or {}
+    return str(account.get("login") or "?")
 
 
 def invalidate_token(installation_id: int) -> None:

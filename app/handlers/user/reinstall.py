@@ -9,6 +9,7 @@ from aiogram.types import Message
 
 from app.config import Config
 from app.db.functions import Chat, User
+from app.handlers.user.event_settings import invalidate_subscription_cache
 from app.utils.hooks import HookError, update_webhook
 
 router = Router()
@@ -76,6 +77,9 @@ async def reinstall_handler(message: Message, bot: Bot, config: Config):
             failures.append((integration.repository_name, result.message))
         else:
             successes.append(integration.repository_name)
+
+    if successes:
+        invalidate_subscription_cache(message.chat.id)
 
     parts = []
     if successes:

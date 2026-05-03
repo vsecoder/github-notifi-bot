@@ -8,6 +8,7 @@ import asyncio
 import time
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
@@ -53,6 +54,12 @@ _SUBSCRIPTION_CACHE: dict[int, tuple[set[str] | None, float]] = {}
 _CACHE_TTL = 120.0  # seconds
 
 
+def invalidate_subscription_cache(chat_id: int) -> None:
+    """Drop the cached subscribed-events set for a chat. Call after
+    /reinstall so the next /events invocation sees fresh state."""
+    _SUBSCRIPTION_CACHE.pop(chat_id, None)
+
+
 def _label(event_type: str) -> str:
     return EVENT_LABELS.get(event_type, event_type)
 
@@ -68,13 +75,14 @@ def build_keyboard(
     )
 
     def render(s: EventSetting) -> str:
+        state = "✅" if s.enabled else "❌"
         if (
             available is not None
             and s.event_type != "ping"
             and s.event_type not in available
         ):
-            return f"⚠️ {_label(s.event_type)}"
-        return f"{'✅' if s.enabled else '❌'} {_label(s.event_type)}"
+            return f"⚠️{state} {_label(s.event_type)}"
+        return f"{state} {_label(s.event_type)}"
 
     buttons = [
         InlineKeyboardButton(
@@ -231,9 +239,15 @@ async def toggle_event_setting(
     await setting.save()
 
     updated = await EventSetting.for_chat(msg.chat.id)
-    await msg.edit_reply_markup(
-        reply_markup=build_keyboard(updated, available)
-    )
+    try:
+        await msg.edit_reply_markup(
+            reply_markup=build_keyboard(updated, available)
+        )
+    except TelegramBadRequest as e:
+        # Telegram errors when the new markup matches the current one byte-for-byte.
+        # Harmless — the toggle still persisted in the DB; just acknowledge.
+        if "message is not modified" not in str(e):
+            raise
     await callback.answer(
         f"{event_type.value} {'enabled' if setting.enabled else 'disabled'}"
     )

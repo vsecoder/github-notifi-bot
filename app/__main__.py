@@ -17,7 +17,7 @@ from app.db import close_orm, init_orm
 from app.handlers import get_handlers_router
 from app.middlewares import register_middlewares
 from app.commands import remove_bot_commands, setup_bot_commands
-from app.webhook import dispatcher as webhook_dispatcher
+from app.webhook.main import dispatcher as webhook_dispatcher
 
 
 async def on_startup(dispatcher: Dispatcher, bot: Bot, config: Config):
@@ -40,14 +40,16 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot, config: Config):
     logging.info(f"Username - @{bot_info.username}")
     logging.info(f"ID - {bot_info.id}")
 
-    states = {
-        True: "Enabled",
-        False: "Disabled",
-    }
+    def _state(value: bool | None) -> str:
+        if value is None:
+            return "Unknown"
+        return "Enabled" if value else "Disabled"
 
-    logging.debug(f"Groups Mode - {states[bot_info.can_join_groups]}")
-    logging.debug(f"Privacy Mode - {states[not bot_info.can_read_all_group_messages]}")
-    logging.debug(f"Inline Mode - {states[bot_info.supports_inline_queries]}")
+    logging.debug(f"Groups Mode - {_state(bot_info.can_join_groups)}")
+    logging.debug(
+        f"Privacy Mode - {_state(not bot_info.can_read_all_group_messages)}"
+    )
+    logging.debug(f"Inline Mode - {_state(bot_info.supports_inline_queries)}")
 
     logging.info("Bot started!")
 
@@ -96,9 +98,7 @@ async def main():
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    context_kwargs = {"config": config}
-
-    await dp.start_polling(bot, **context_kwargs)
+    await dp.start_polling(bot, config=config)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

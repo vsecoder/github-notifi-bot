@@ -14,6 +14,9 @@ async def mail_handler(message: Message, bot: Bot, config: Config):
     if message.chat.id != config.settings.owner_id:
         return await message.answer("This command can only be used by the bot owner.")
 
+    if message.text is None:
+        return await message.answer("Usage:\n/mail [users|chats|all] <message>")
+
     args = message.text.split(maxsplit=2)
 
     if len(args) < 2:

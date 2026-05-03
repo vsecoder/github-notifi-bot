@@ -2,10 +2,11 @@ from aiogram import Router
 
 
 def get_user_router() -> Router:
-    from . import integration, start, token, text, event_settings
+    from . import event_settings, integration, reinstall, start, text, token
 
     router = Router()
     router.include_router(integration.router)
+    router.include_router(reinstall.router)
     router.include_router(event_settings.router)
     router.include_router(start.router)
     router.include_router(token.router)

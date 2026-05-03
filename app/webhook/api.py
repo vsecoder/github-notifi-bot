@@ -2,19 +2,11 @@ import logging
 import time
 
 import aiohttp
-from fastapi import APIRouter, Request, Header
+from fastapi import APIRouter, Header, Request
 
-from app.db.functions import Integration, EventSetting
 from app.config import parse_config
-from app.utils.messages import (
-    commit_message,
-    issue_message,
-    star_message,
-    ping_message,
-    create_message,
-    pull_request_message,
-    fork_message,
-)
+from app.db.functions import EventSetting, Integration
+from app.events import EventCtx, build_message
 
 router = APIRouter()
 config = parse_config()
@@ -28,26 +20,6 @@ def check_floodwait(chat_id: int, floodwait: int = 3) -> bool:
         return True
     floodwait_cache[chat_id] = now
     return False
-
-
-def build_message(event: str, payload: dict, user_token: str | None) -> str | None:
-    match event:
-        case "ping":
-            return ping_message(payload)
-        case "push":
-            return commit_message(payload, user_token)
-        case "issues":
-            return issue_message(payload)
-        case "star":
-            return star_message(payload)
-        case "create":
-            return create_message(payload)
-        case "pull_request":
-            return pull_request_message(payload)
-        case "fork":
-            return fork_message(payload)
-        case _:
-            return None
 
 
 async def _post_send(
@@ -81,7 +53,6 @@ async def send_message(
         if status < 400:
             return
 
-        # Topic was deleted/closed — retry without thread to keep delivery.
         if topic_id and status == 400 and (
             "thread not found" in body.lower() or "topic_closed" in body.lower()
         ):
@@ -133,7 +104,8 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
             ):
                 continue
 
-            message = build_message(X_GitHub_Event, payload, user.token)
+            ctx = EventCtx(user_token=user.token)
+            message = build_message(X_GitHub_Event, payload, ctx)
             if message:
                 await send_message(session, chat.chat_id, chat.topic_id, message)
 

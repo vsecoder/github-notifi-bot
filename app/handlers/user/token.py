@@ -10,12 +10,14 @@ router = Router()
 
 @router.message(Command(commands=["token"]))
 async def cmd_token(message: Message):
+    if message.from_user is None:
+        return
     if message.chat.id != message.from_user.id:
         return await message.answer(
             "Please use /token in private chat — your token is sensitive."
         )
 
-    parts = message.text.split()
+    parts = (message.text or "").split()
     if len(parts) != 2:
         return await message.answer(
             "Invalid command. Use <code>/token &lt;your_personal_access_token&gt;</code>"

@@ -57,7 +57,7 @@ class Chat(models.Chat):
         chat = await cls.get_or_none(chat_id=chat_id)
         if chat is None:
             return []
-        return await chat.integrations.all()
+        return await chat.integrations.all()  # type: ignore[attr-defined]
 
     @classmethod
     async def add_integration(cls, chat_id: int, user_id: int, repository_name: str) -> tuple:
@@ -141,7 +141,7 @@ class Integration(models.Integration):
         repository_name: str,
         chat_id: int,
         user_id: int,
-        integration_token: str = None,
+        integration_token: Optional[str] = None,
     ):
         chat = await Chat.get(chat_id=chat_id)
         user = await User.get(id=user_id)
@@ -162,7 +162,7 @@ class Integration(models.Integration):
         await cls.filter(id=integration_id).update(last_commit=commit)
 
     @classmethod
-    async def delete(cls, integration_id: int):
+    async def delete_by_id(cls, integration_id: int):
         await cls.filter(id=integration_id).delete()
 
     @classmethod
@@ -206,5 +206,5 @@ class EventSetting(models.Eventsetting):
         return setting.enabled if setting else True
 
     @classmethod
-    async def for_chat(cls, chat_id: int) -> list["EventSetting"]:
-        return await cls.filter(chat_id=chat_id)
+    async def for_chat(cls, chat_id: int) -> "list[EventSetting]":
+        return list(await cls.filter(chat_id=chat_id))

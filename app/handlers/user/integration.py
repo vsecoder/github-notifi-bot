@@ -20,6 +20,9 @@ async def _get_admin_ids(bot: Bot, chat_id: int) -> list[int] | None:
 
 
 async def _require_group_admin(message: Message, bot: Bot) -> bool:
+    if message.from_user is None:
+        return False
+
     if message.chat.id == message.from_user.id:
         await message.answer(
             "This command works only in a <b>group or channel</b>."
@@ -47,6 +50,7 @@ async def _require_group_admin(message: Message, bot: Bot) -> bool:
 async def integrate_handler(message: Message, bot: Bot, config: Config):
     if not await _require_group_admin(message, bot):
         return
+    assert message.from_user is not None  # narrowed by _require_group_admin
 
     await Chat.ensure_registered(message.chat.id)
 
@@ -55,7 +59,7 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
             "You're not registered. Send /start to me in private chat first."
         )
 
-    parts = message.text.split()
+    parts = (message.text or "").split()
     if len(parts) != 2:
         return await message.answer(
             "Invalid command. Use <code>/integrate username/repository</code>"
@@ -93,7 +97,7 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         )
 
         if isinstance(result, HookError):
-            await Integration.delete(integration.id)
+            await Integration.delete_by_id(integration.id)
             await message.answer(
                 f"❌ Couldn't create the webhook for <code>{repo_name}</code>.\n\n"
                 f"{result.message}"
@@ -108,7 +112,7 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
 
 @router.message(Command(commands=["integrations"]))
 async def integrations_handler(message: Message):
-    if message.chat.id == message.from_user.id:
+    if message.from_user is not None and message.chat.id == message.from_user.id:
         return await message.answer(
             "This command works only in a group or channel."
         )
@@ -131,7 +135,7 @@ async def delete_handler(message: Message, bot: Bot):
     if not await _require_group_admin(message, bot):
         return
 
-    parts = message.text.split()
+    parts = (message.text or "").split()
     if len(parts) != 2:
         return await message.answer(
             "Invalid command. Use <code>/delete username/repository</code>"
@@ -146,7 +150,7 @@ async def delete_handler(message: Message, bot: Bot):
             f"Repository <code>{repo_name}</code> is not integrated in this chat."
         )
 
-    await Integration.delete(integration.id)
+    await Integration.delete_by_id(integration.id)
 
     await message.answer(
         f"✅ Repository <code>{repo_name}</code> removed.\n"

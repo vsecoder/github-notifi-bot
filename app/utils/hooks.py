@@ -5,6 +5,8 @@ from github import Auth, Github, GithubException
 from github import BadCredentialsException, UnknownObjectException
 from github.Repository import Repository
 
+from app.events import get_subscribed_events
+
 
 @dataclass
 class HookError:
@@ -66,6 +68,10 @@ def _explain(e: GithubException, repo_name: str = "") -> HookError:
     )
 
 
+def _hook_url(host: str, endpoint: str) -> str:
+    return f"{host}webhook/{endpoint}"
+
+
 def create_webhook(
     host: str,
     endpoint: str,
@@ -73,16 +79,64 @@ def create_webhook(
     integration: str,
 ) -> Optional[HookError]:
     """Create a GitHub webhook for `integration` repo. Returns None on success."""
-    config = {
-        "url": f"{host}webhook/{endpoint}",
-        "content_type": "json",
-    }
-    events = ["push", "pull_request", "issues", "fork", "star", "create"]
+    config = {"url": _hook_url(host, endpoint), "content_type": "json"}
+    events = get_subscribed_events()
     try:
         g = _gh(gh_token)
         repo = g.get_repo(integration)
         repo.create_hook("web", config, events, active=True)
         return None
+    except GithubException as e:
+        return _explain(e, integration)
+
+
+def update_webhook(
+    host: str,
+    endpoint: str,
+    gh_token: str,
+    integration: str,
+) -> Optional[HookError]:
+    """Re-sync the GitHub-side webhook event subscription with the bot's
+    current list. If a hook with our URL exists, edit it; otherwise create
+    a fresh one. Returns None on success."""
+    config = {"url": _hook_url(host, endpoint), "content_type": "json"}
+    events = get_subscribed_events()
+    target_url = config["url"]
+    try:
+        g = _gh(gh_token)
+        repo = g.get_repo(integration)
+        existing = None
+        for hook in repo.get_hooks():
+            if hook.config.get("url", "") == target_url:
+                existing = hook
+                break
+
+        if existing is not None:
+            existing.edit(name="web", config=config, events=events, active=True)
+        else:
+            repo.create_hook("web", config, events, active=True)
+        return None
+    except GithubException as e:
+        return _explain(e, integration)
+
+
+def get_subscribed_events_for(
+    gh_token: str, integration: str, host: str, endpoint: str
+) -> Union[set[str], HookError]:
+    """Return the set of events the GitHub webhook is currently subscribed to,
+    or a HookError if we can't reach GitHub / the hook doesn't exist."""
+    target_url = _hook_url(host, endpoint)
+    try:
+        g = _gh(gh_token)
+        repo = g.get_repo(integration)
+        for hook in repo.get_hooks():
+            if hook.config.get("url", "") == target_url:
+                return set(hook.events or [])
+        return HookError(
+            "not_found",
+            f"No webhook with our URL was found on <code>{integration}</code>. "
+            "Use /reinstall to reinstall it.",
+        )
     except GithubException as e:
         return _explain(e, integration)
 

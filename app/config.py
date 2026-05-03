@@ -1,6 +1,7 @@
 # sourcery skip: avoid-builtin-shadow
 import os
 from dataclasses import MISSING, dataclass, fields
+from typing import Optional
 
 import toml
 
@@ -15,10 +16,10 @@ class ConfigDatabase:
     models: list[str]
     protocol: str = "sqlite"
     file_name: str = "production-database.sqlite3"
-    user: str = None
-    password: str = None
-    host: str = None
-    port: str = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[str] = None
 
     def get_db_url(self):
         if self.protocol == "sqlite":
@@ -65,13 +66,14 @@ class Config:
 
     @classmethod
     def parse(cls, data: dict) -> "Config":
-        sections = {}
+        sections: dict[str, object] = {}
 
         for section in fields(cls):
-            pre = {}
+            section_type = section.type  # type: ignore[assignment]
+            pre: dict[str, object] = {}
             current = data[section.name]
 
-            for field in fields(section.type):
+            for field in fields(section_type):  # type: ignore[arg-type]
                 if field.name in current:
                     pre[field.name] = current[field.name]
                 elif field.default is not MISSING:
@@ -81,9 +83,9 @@ class Config:
                         f"Missing field {field.name} in section {section.name}"
                     )
 
-            sections[section.name] = section.type(**pre)
+            sections[section.name] = section_type(**pre)  # type: ignore[operator]
 
-        return cls(**sections)
+        return cls(**sections)  # type: ignore[arg-type]
 
 
 def parse_config(config_file: str = "config.toml") -> Config:

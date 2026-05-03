@@ -49,6 +49,8 @@ QUICK_START_HAS_TOKEN = (
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
+    if message.from_user is None:
+        return
     user_id = message.from_user.id
 
     if message.chat.id != user_id:
@@ -69,11 +71,9 @@ async def cmd_start(message: Message):
 
 @router.message(Command(commands=["help"]))
 async def cmd_help(message: Message):
-    user = (
-        await User.get_or_none(telegram_id=message.from_user.id)
-        if message.chat.id == message.from_user.id
-        else None
-    )
+    user = None
+    if message.from_user is not None and message.chat.id == message.from_user.id:
+        user = await User.get_or_none(telegram_id=message.from_user.id)
     text = WELCOME_HEADER + REQUIREMENTS
     text += QUICK_START_HAS_TOKEN if (user and user.token) else QUICK_START_NEW
     await message.answer(text)

@@ -19,11 +19,14 @@ def get_user_router() -> Router:
     router.include_router(integration.router)
     router.include_router(reinstall.router)
     router.include_router(event_settings.router)
-    # Dialog windows must be reachable before the catch-all text handler so
-    # that MessageInput state filters get to match before text.router does.
-    router.include_router(get_dialogs_router())
-    # DM-only reply-keyboard taps (filtered by F.chat.type == "private").
+    # DM reply-keyboard taps must beat the dialogs' MessageInput, otherwise
+    # tapping "❓ Help" while in TokenSG.awaiting_token would feed "❓ Help"
+    # to the token validator. Each handler resets the dialog stack so we
+    # don't leave dangling dialog state.
     router.include_router(dm_menu.router)
+    # Dialog windows: MessageInput state filters take precedence over the
+    # catch-all text handler below.
+    router.include_router(get_dialogs_router())
     router.include_router(start.router)
     router.include_router(token.router)
     # Catch-all DM text handler comes last.

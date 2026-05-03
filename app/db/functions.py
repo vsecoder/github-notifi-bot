@@ -1,6 +1,4 @@
-from typing import Union
-
-from tortoise.exceptions import DoesNotExist
+from typing import Optional
 
 from app.db import models
 import string
@@ -9,11 +7,8 @@ import random
 
 class User(models.User):
     @classmethod
-    async def is_registered(cls, telegram_id: int) -> Union[models.User, bool]:
-        try:
-            return await cls.get(telegram_id=telegram_id)
-        except DoesNotExist:
-            return False
+    async def is_registered(cls, telegram_id: int) -> Optional["User"]:
+        return await cls.get_or_none(telegram_id=telegram_id)
 
     @classmethod
     async def register(cls, telegram_id):
@@ -28,32 +23,26 @@ class User(models.User):
         await cls.filter(telegram_id=telegram_id).update(token=token)
 
     @classmethod
-    async def get_by_id(cls, id: int) -> Union[models.User, bool]:
-        try:
-            return await cls.get(id=id)
-        except DoesNotExist:
-            return False
+    async def get_by_id(cls, id: int) -> Optional["User"]:
+        return await cls.get_or_none(id=id)
 
 
 class Chat(models.Chat):
     @classmethod
-    async def is_registered(cls, chat_id: int) -> Union[models.Chat, bool]:
-        try:
-            return await cls.get(chat_id=chat_id)
-        except DoesNotExist:
-            return False
+    async def is_registered(cls, chat_id: int) -> Optional["Chat"]:
+        return await cls.get_or_none(chat_id=chat_id)
 
     @classmethod
-    async def ensure_registered(cls, chat_id: int):
-        if not await cls.is_registered(chat_id):
-            await cls.create(chat_id=chat_id)
+    async def ensure_registered(cls, chat_id: int) -> "Chat":
+        chat = await cls.get_or_none(chat_id=chat_id)
+        if chat is None:
+            chat = await cls.create(chat_id=chat_id)
+        await EventSetting.init_for_chat(chat_id)
+        return chat
 
     @classmethod
-    async def get_chat(cls, chat_id: int) -> Union[models.Chat, bool]:
-        try:
-            return await cls.get(chat_id=chat_id)
-        except DoesNotExist:
-            return False
+    async def get_chat(cls, chat_id: int) -> Optional["Chat"]:
+        return await cls.get_or_none(chat_id=chat_id)
 
     @classmethod
     async def register(cls, chat_id: int):
@@ -65,7 +54,9 @@ class Chat(models.Chat):
 
     @classmethod
     async def get_integrations(cls, chat_id: int) -> list:
-        chat = await cls.get(chat_id=chat_id).prefetch_related("integrations")
+        chat = await cls.get_or_none(chat_id=chat_id)
+        if chat is None:
+            return []
         return await chat.integrations.all()
 
     @classmethod
@@ -78,33 +69,33 @@ class Chat(models.Chat):
         ).first()
 
         if existing:
-            integration_token = existing.integration_token
-        else:
-            integration_token = "".join(
-                random.choices(string.ascii_uppercase + string.digits, k=16)
-            )
-
-        return (
-            await Integration.create(
+            integration = await Integration.create(
                 chat=chat,
                 user=user,
                 repository_name=repository_name,
-                integration_token=integration_token,
-            ),
-            existing,
+                integration_token=existing.integration_token,
+            )
+            return integration, True
+
+        integration_token = "".join(
+            random.choices(string.ascii_uppercase + string.digits, k=16)
         )
+        integration = await Integration.create(
+            chat=chat,
+            user=user,
+            repository_name=repository_name,
+            integration_token=integration_token,
+        )
+        return integration, False
 
     @classmethod
     async def remove_integration(cls, chat_id: int, integration_id: int):
         await Integration.filter(chat_id=chat_id, id=integration_id).delete()
 
     @classmethod
-    async def get_topic(cls, chat_id: int) -> Union[int, bool]:
-        try:
-            chat = await cls.get(chat_id=chat_id)
-            return chat.topic_id
-        except DoesNotExist:
-            return False
+    async def get_topic(cls, chat_id: int) -> Optional[int]:
+        chat = await cls.get_or_none(chat_id=chat_id)
+        return chat.topic_id if chat else None
 
     @classmethod
     async def set_topic(cls, chat_id: int, topic_id: int):
@@ -115,11 +106,11 @@ class Chat(models.Chat):
         await cls.filter(chat_id=chat_id).update(topic_id=None)
 
     @classmethod
-    async def get_by_integration(cls, integration_id: int) -> Union[models.Chat, None]:
-        integration = await Integration.get(id=integration_id).prefetch_related(
+    async def get_by_integration(cls, integration_id: int) -> Optional["Chat"]:
+        integration = await Integration.get_or_none(id=integration_id).prefetch_related(
             "chat"
         )
-        return integration.chat
+        return integration.chat if integration else None
 
 
 class Integration(models.Integration):
@@ -128,11 +119,8 @@ class Integration(models.Integration):
         return await cls.all().count()
 
     @classmethod
-    async def get_by_id(cls, integration_id: int) -> Union[models.Integration, None]:
-        try:
-            return await cls.get(id=integration_id)
-        except DoesNotExist:
-            return None
+    async def get_by_id(cls, integration_id: int) -> Optional["Integration"]:
+        return await cls.get_or_none(id=integration_id)
 
     @classmethod
     async def get_by_repo(cls, repository_name: str) -> list:
@@ -141,12 +129,11 @@ class Integration(models.Integration):
     @classmethod
     async def get_by_chat_and_repo(
         cls, chat_id: int, repo_name: str
-    ) -> Union[models.Integration, None]:
-        try:
-            chat = await Chat.get(chat_id=chat_id)
-            return await cls.get(chat=chat, repository_name=repo_name)
-        except DoesNotExist:
+    ) -> Optional["Integration"]:
+        chat = await Chat.get_or_none(chat_id=chat_id)
+        if chat is None:
             return None
+        return await cls.get_or_none(chat=chat, repository_name=repo_name)
 
     @classmethod
     async def create_integration(
@@ -187,38 +174,37 @@ class Integration(models.Integration):
         )
 
 
-class EventSetting(models.Model):
+class EventSetting(models.Eventsetting):
     @classmethod
-    async def init_for_chat(cls, chat_id: int) -> list["EventSetting"]:
+    async def init_for_chat(cls, chat_id: int) -> None:
         for event_type in models.EventType:
-            setting, created = await cls.get_or_create(
-                chat_id=chat_id, event_type=event_type
+            await cls.get_or_create(
+                defaults={"enabled": True},
+                chat_id=chat_id,
+                event_type=event_type.value,
             )
-            if created:
-                setting.enabled = True
-                await setting.save()
 
     @classmethod
     async def enable(cls, chat_id: int, event_type: models.EventType) -> None:
         await cls.update_or_create(
-            defaults={"enabled": True}, chat_id=chat_id, event_type=event_type
+            defaults={"enabled": True},
+            chat_id=chat_id,
+            event_type=event_type.value,
         )
 
     @classmethod
     async def disable(cls, chat_id: int, event_type: models.EventType) -> None:
         await cls.update_or_create(
-            defaults={"enabled": False}, chat_id=chat_id, event_type=event_type
+            defaults={"enabled": False},
+            chat_id=chat_id,
+            event_type=event_type.value,
         )
 
     @classmethod
-    async def is_enabled(cls, chat: Chat, event_type: models.EventType) -> bool:
-        # setting = await cls.get_or_none(chat=chat, event_type=event_type)
-        setting = await cls.filter(event_type=event_type).prefetch_related("chat")
-        setting = [s for s in setting if s.chat == chat]
-        return setting[0].enabled if setting else False
+    async def is_enabled(cls, chat_id: int, event_type: str) -> bool:
+        setting = await cls.get_or_none(chat_id=chat_id, event_type=event_type)
+        return setting.enabled if setting else True
 
     @classmethod
-    async def exists(cls, chat: Chat) -> bool:
-        settings = await cls.all().prefetch_related("chat")
-        settings = [s for s in settings if s.chat == chat]
-        return settings
+    async def for_chat(cls, chat_id: int) -> list["EventSetting"]:
+        return await cls.filter(chat_id=chat_id)

@@ -11,6 +11,7 @@ class EventType(str, Enum):
     star = "star"
     create = "create"
     pull_request = "pull_request"
+    fork = "fork"
 
 
 class User(Model):

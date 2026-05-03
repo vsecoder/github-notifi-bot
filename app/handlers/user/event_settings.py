@@ -1,4 +1,4 @@
-from aiogram import Router, F
+from aiogram import Bot, Router, F
 from aiogram.filters import Command
 from aiogram.types import (
     Message,
@@ -26,38 +26,57 @@ def build_keyboard(settings: list[EventSetting]) -> InlineKeyboardMarkup:
     )
 
 
+async def _is_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
+    admins = [admin.user.id for admin in await bot.get_chat_administrators(chat_id)]
+    return user_id in admins
+
+
 @router.message(Command("events"))
-async def show_event_settings(message: Message):
-    chat = await Chat.get_chat(message.chat.id)
-    await EventSetting.init_for_chat(chat.chat_id)
+async def show_event_settings(message: Message, bot: Bot):
+    if message.chat.id == message.from_user.id:
+        return await message.answer(
+            "You can manage event settings only in a group or channel."
+        )
 
-    existing = await EventSetting.exists(chat)
-    if not existing:
-        await EventSetting.init_for_chat(chat.chat_id)
-    existing = await EventSetting.exists(chat)
+    if not await _is_admin(bot, message.chat.id, message.from_user.id):
+        return await message.answer(
+            "Only administrators can change event settings."
+        )
 
-    kb = build_keyboard(existing)
+    await Chat.ensure_registered(message.chat.id)
+
+    settings = await EventSetting.for_chat(message.chat.id)
     await message.answer(
         "✨ Github events settings",
-        reply_markup=kb,
+        reply_markup=build_keyboard(settings),
+        message_thread_id=message.message_thread_id,
     )
 
 
 @router.callback_query(F.data.startswith("toggle_event:"))
-async def toggle_event_setting(callback: CallbackQuery):
+async def toggle_event_setting(callback: CallbackQuery, bot: Bot):
+    if not await _is_admin(bot, callback.message.chat.id, callback.from_user.id):
+        return await callback.answer(
+            "Only administrators can change event settings.", show_alert=True
+        )
+
     event_type_str = callback.data.split(":")[1]
-    event_type = EventType(event_type_str)
+    try:
+        event_type = EventType(event_type_str)
+    except ValueError:
+        return await callback.answer("Unknown event type.", show_alert=True)
 
-    chat = await Chat.get(chat_id=callback.message.chat.id)
-    setting = await EventSetting.get_or_none(chat=chat, event_type=event_type)
+    setting = await EventSetting.get_or_none(
+        chat_id=callback.message.chat.id, event_type=event_type.value
+    )
+    if setting is None:
+        return await callback.answer("Setting not found.", show_alert=True)
 
-    if setting:
-        setting.enabled = not setting.enabled
-        await setting.save()
+    setting.enabled = not setting.enabled
+    await setting.save()
 
-    updated = await EventSetting.filter(chat=chat)
-    kb = build_keyboard(updated)
-    await callback.message.edit_reply_markup(reply_markup=kb)
+    updated = await EventSetting.for_chat(callback.message.chat.id)
+    await callback.message.edit_reply_markup(reply_markup=build_keyboard(updated))
     await callback.answer(
         f"{event_type.value} {'enabled' if setting.enabled else 'disabled'}"
     )

@@ -1,79 +1,108 @@
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from app.utils.hooks import check_repo, create_webhook
+from app.utils.hooks import HookError, check_repo, create_webhook
 from app.db.functions import Chat, Integration, User
 from app.config import Config
-
-import html
 
 router = Router()
 
 
+async def _get_admin_ids(bot: Bot, chat_id: int) -> list[int] | None:
+    """Returns admin telegram ids, or None if the bot can't read admins."""
+    try:
+        admins = await bot.get_chat_administrators(chat_id)
+    except (TelegramBadRequest, TelegramForbiddenError):
+        return None
+    return [a.user.id for a in admins]
+
+
+async def _require_group_admin(message: Message, bot: Bot) -> bool:
+    if message.chat.id == message.from_user.id:
+        await message.answer(
+            "This command works only in a <b>group or channel</b>."
+        )
+        return False
+
+    admin_ids = await _get_admin_ids(bot, message.chat.id)
+    if admin_ids is None:
+        await message.answer(
+            "I can't read the admin list in this chat. "
+            "Please grant me <b>administrator</b> rights and try again."
+        )
+        return False
+
+    if message.from_user.id not in admin_ids:
+        await message.answer(
+            "Only chat <b>administrators</b> can use this command."
+        )
+        return False
+
+    return True
+
+
 @router.message(Command(commands=["integrate"]))
 async def integrate_handler(message: Message, bot: Bot, config: Config):
-    if message.chat.id == message.from_user.id:
-        return await message.answer(
-            "You can integrate repository only in group or channel."
-        )
+    if not await _require_group_admin(message, bot):
+        return
 
     await Chat.ensure_registered(message.chat.id)
 
-    admins = [
-        admin.user.id for admin in await bot.get_chat_administrators(message.chat.id)
-    ]
-    if message.from_user.id not in admins:
-        return await message.answer(
-            "You are not administrator. Only administrators can integrate repositories."
-        )
-
     if not await User.is_registered(message.from_user.id):
         return await message.answer(
-            "You are not registered. Please, use /start command in private chat with me to register."
+            "You're not registered. Send /start to me in private chat first."
         )
 
     parts = message.text.split()
     if len(parts) != 2:
         return await message.answer(
-            "Invalid command. Use <code>/integrate username/repository_name</code>"
+            "Invalid command. Use <code>/integrate username/repository</code>"
         )
     repo_name = parts[1]
 
     user = await User.get(telegram_id=message.from_user.id)
+    if not user.token:
+        return await message.answer(
+            "You haven't set a GitHub token yet. Send it to me in private chat, "
+            "or use /start there for instructions."
+        )
+
     repo = check_repo(user.token, repo_name)
-    if isinstance(repo, dict):
-        return await message.answer("Repository not found.")
+    if isinstance(repo, HookError):
+        return await message.answer(f"❌ {repo.message}")
 
     existing = await Integration.get_by_chat_and_repo(
         chat_id=message.chat.id, repo_name=repo_name
     )
     if existing:
-        return await message.answer("Repository already integrated.")
+        return await message.answer(
+            f"Repository <code>{repo_name}</code> is already integrated in this chat."
+        )
 
-    integration, exiting = await Chat.add_integration(
+    integration, reused_existing = await Chat.add_integration(
         chat_id=message.chat.id,
         user_id=user.id,
         repository_name=repo_name,
     )
 
-    if not exiting:
+    if not reused_existing:
         result = create_webhook(
             config.api.host, integration.integration_token, user.token, repo_name
         )
 
-        if result:
+        if isinstance(result, HookError):
+            await Integration.delete(integration.id)
             await message.answer(
-                f"Error while creating webhook for repository <code>{repo_name}</code>.\n"
-                f"{html.escape(result['message'])}\n\n"
-            )
-            await message.answer(
-                f"<code>{result['error']}</code>"
+                f"❌ Couldn't create the webhook for <code>{repo_name}</code>.\n\n"
+                f"{result.message}"
             )
             return
 
-    return await message.answer(
-        f"Repository <code>{repo_name}</code> integrated. Now you will receive notifications about new commits.",
+    await message.answer(
+        f"✅ Repository <code>{repo_name}</code> integrated. "
+        "Notifications will arrive here."
     )
 
 
@@ -81,43 +110,31 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
 async def integrations_handler(message: Message):
     if message.chat.id == message.from_user.id:
         return await message.answer(
-            "You can get integrations only in group or channel."
+            "This command works only in a group or channel."
         )
 
     await Chat.ensure_registered(message.chat.id)
 
     integrations = await Chat.get_integrations(message.chat.id)
     if not integrations:
-        return await message.answer("No integrations.")
+        return await message.answer("No integrations in this chat yet.")
 
     text = "<b>Integrations:</b>\n\n"
     for integration in integrations:
-        text += f"<code>{integration.repository_name}</code>\n"
+        text += f"• <code>{integration.repository_name}</code>\n"
 
     await message.answer(text)
 
 
 @router.message(Command(commands=["delete"]))
 async def delete_handler(message: Message, bot: Bot):
-    if message.chat.id == message.from_user.id:
-        return await message.answer(
-            "You can delete integrations only in group or channel."
-        )
-
-    await Chat.ensure_registered(message.chat.id)
-
-    admins = [
-        admin.user.id for admin in await bot.get_chat_administrators(message.chat.id)
-    ]
-    if message.from_user.id not in admins:
-        return await message.answer(
-            "You are not administrator. Only administrators can delete integrations."
-        )
+    if not await _require_group_admin(message, bot):
+        return
 
     parts = message.text.split()
     if len(parts) != 2:
         return await message.answer(
-            "Invalid command. Use <code>/delete repository_name</code>"
+            "Invalid command. Use <code>/delete username/repository</code>"
         )
     repo_name = parts[1]
 
@@ -125,34 +142,33 @@ async def delete_handler(message: Message, bot: Bot):
         chat_id=message.chat.id, repo_name=repo_name
     )
     if not integration:
-        return await message.answer("Repository not integrated.")
+        return await message.answer(
+            f"Repository <code>{repo_name}</code> is not integrated in this chat."
+        )
 
     await Integration.delete(integration.id)
 
     await message.answer(
-        f"Repository <code>{repo_name}</code> deleted.",
+        f"✅ Repository <code>{repo_name}</code> removed.\n"
+        "<i>Note: this only removes the integration from the bot. "
+        "The webhook on GitHub side stays — delete it manually in repo Settings → Webhooks "
+        "if you want it gone there too.</i>"
     )
 
 
 @router.message(Command(commands=["set_topic"]))
 async def set_topic_handler(message: Message, bot: Bot, config: Config):
-    if message.chat.id == message.from_user.id:
-        return await message.answer("You can set topic only in group or channel.")
-
-    await Chat.ensure_registered(message.chat.id)
-
-    admins = [
-        admin.user.id for admin in await bot.get_chat_administrators(message.chat.id)
-    ]
-    if message.from_user.id not in admins:
-        return await message.answer(
-            "You are not administrator. Only administrators can set topic."
-        )
+    if not await _require_group_admin(message, bot):
+        return
 
     topic_id = message.message_thread_id
     if not topic_id:
-        return await message.answer("This message is not in thread.")
+        return await message.answer(
+            "Send <code>/set_topic</code> from inside a <b>forum topic</b> — "
+            "I'll deliver notifications to that topic."
+        )
 
+    await Chat.ensure_registered(message.chat.id)
     await Chat.set_topic(message.chat.id, topic_id)
 
-    await message.answer("Topic set.")
+    await message.answer("✅ Topic set. Notifications will go here.")

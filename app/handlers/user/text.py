@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.types import Message
 
 from app.db.functions import User
-from app.utils.hooks import check_repo, validate
+from app.utils.hooks import HookError, check_repo, validate
 
 router = Router()
 
@@ -16,36 +16,41 @@ async def text_handler(message: Message):
         return
 
     if not await User.is_registered(message.from_user.id):
-        await message.answer(
-            "You are not registered. Please, use /start command to register."
+        return await message.answer(
+            "You are not registered. Please use /start to register."
         )
-        return
 
     user = await User.get(telegram_id=message.from_user.id)
 
-    if "/" not in message.text:
-        if not user.token:
-            if not validate(message.text):
-                return await message.answer("Invalid token.")
+    if not user.token:
+        if message.text.startswith("/"):
+            return
+        result = validate(message.text)
+        if isinstance(result, HookError):
+            return await message.answer(f"❌ {result.message}")
 
-            await User.write_token(message.from_user.id, message.text)
-            await message.answer("Token saved, /token token to change another.")
-
-            return await message.answer(
-                "Now you can send repository name, for example: <b>hikariatama/Hikka</b>"
-            )
-
-    repo = check_repo(user.token, message.text)
-    if type(repo) is dict:
-        return await message.answer("Repository not found.")
-
-    if message.from_user.id == message.chat.id:
-        text = (
-            f"📐 <b>{'🔒' if repo.private else ''} <a href='https://github.com/{repo.full_name}'>"
-            f"{repo.full_name}</a></b> {repo.stargazers_count} ⭐️ \n"
-            f"<i>{repo.description if repo.description else 'No description'}</i>\n"
-            f"Run in chat <code>/integrate {repo.full_name}</code> to integrate this repository "
-            "and get notifications about new commits."
+        await User.write_token(message.from_user.id, message.text)
+        await message.answer(
+            "✅ Token saved. Use <code>/token &lt;new_token&gt;</code> to replace it later."
+        )
+        return await message.answer(
+            "Now add me as <b>administrator</b> to the group where you want notifications, "
+            "and run <code>/integrate username/repository</code> there.\n"
+            "You can also send me a repo name (e.g. <code>hikariatama/Hikka</code>) to view its summary."
         )
 
-        return await message.answer(text)
+    if message.text.startswith("/"):
+        return
+
+    repo = check_repo(user.token, message.text)
+    if isinstance(repo, HookError):
+        return await message.answer(f"❌ {repo.message}")
+
+    text = (
+        f"📐 <b>{'🔒' if repo.private else ''} <a href='https://github.com/{repo.full_name}'>"
+        f"{repo.full_name}</a></b> {repo.stargazers_count} ⭐️\n"
+        f"<i>{repo.description if repo.description else 'No description'}</i>\n\n"
+        f"Run in a group: <code>/integrate {repo.full_name}</code> "
+        "to start receiving notifications."
+    )
+    await message.answer(text)

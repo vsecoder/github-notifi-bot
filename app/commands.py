@@ -4,13 +4,14 @@ from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefaul
 from app.config import Config
 
 users_commands = {
-    "start": "Start bot",
-    "integrate": "Integrate repository",
-    "integrations": "Show integrated repositories",
-    "delete": "Delete integration",
-    "token": "Set GitHub token",
-    "set_topic": "Set notification topic",
-    "events": "Setup chat events",
+    "start": "Start bot / show setup guide",
+    "help": "Show setup guide and command reference",
+    "integrate": "Integrate a repository (in group)",
+    "integrations": "List integrated repositories",
+    "delete": "Remove an integration",
+    "token": "Set or replace your GitHub token (DM)",
+    "set_topic": "Send notifications to current forum topic",
+    "events": "Toggle event types per chat",
 }
 
 

@@ -3,23 +3,30 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from app.db.functions import User
-from app.utils.hooks import validate
+from app.utils.hooks import HookError, validate
 
 router = Router()
 
 
 @router.message(Command(commands=["token"]))
-async def cmd_start(message: Message):
-    if len(message.text.split()) != 2:
+async def cmd_token(message: Message):
+    if message.chat.id != message.from_user.id:
         return await message.answer(
-            "Invalid command. Use <code>/token token</code>"
+            "Please use /token in private chat — your token is sensitive."
         )
 
-    token = message.text.split()[1]
+    parts = message.text.split()
+    if len(parts) != 2:
+        return await message.answer(
+            "Invalid command. Use <code>/token &lt;your_personal_access_token&gt;</code>"
+        )
 
-    if not validate(token):
-        return await message.answer("Invalid token.")
+    token = parts[1]
+    result = validate(token)
+    if isinstance(result, HookError):
+        return await message.answer(f"❌ {result.message}")
 
     await User.write_token(message.from_user.id, token)
-
-    await message.answer("Token saved, /token token to change another.")
+    await message.answer(
+        "✅ Token saved. Use <code>/token &lt;new_token&gt;</code> later to replace it."
+    )

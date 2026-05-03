@@ -1,6 +1,9 @@
+import logging
 import time
-import requests
+
+import aiohttp
 from fastapi import APIRouter, Request, Header
+
 from app.db.functions import Integration, EventSetting
 from app.config import parse_config
 from app.utils.messages import (
@@ -44,10 +47,26 @@ def build_message(event: str, payload: dict, user_token: str | None) -> str | No
         case "fork":
             return fork_message(payload)
         case _:
-            return f"Unknown event: {event}"
+            return None
 
 
-def send_message(chat_id: int, topic_id: int | None, text: str) -> None:
+async def _post_send(
+    session: aiohttp.ClientSession, data: dict
+) -> tuple[int, str]:
+    async with session.post(
+        f"https://api.telegram.org/bot{config.bot.token}/sendMessage",
+        json=data,
+        timeout=aiohttp.ClientTimeout(total=5),
+    ) as response:
+        return response.status, await response.text()
+
+
+async def send_message(
+    session: aiohttp.ClientSession,
+    chat_id: int,
+    topic_id: int | None,
+    text: str,
+) -> None:
     data = {
         "chat_id": chat_id,
         "text": text,
@@ -55,16 +74,42 @@ def send_message(chat_id: int, topic_id: int | None, text: str) -> None:
         "disable_web_page_preview": True,
     }
     if topic_id:
-        data["reply_to_message_id"] = topic_id
+        data["message_thread_id"] = topic_id
 
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{config.bot.token}/sendMessage",
-            json=data,
-            timeout=3,
-        )
-    except requests.RequestException as e:
-        print(f"Error sending to chat {chat_id}: {e}")
+        status, body = await _post_send(session, data)
+        if status < 400:
+            return
+
+        # Topic was deleted/closed — retry without thread to keep delivery.
+        if topic_id and status == 400 and (
+            "thread not found" in body.lower() or "topic_closed" in body.lower()
+        ):
+            logging.warning(
+                "Topic %s in chat %s is unavailable, retrying without thread.",
+                topic_id,
+                chat_id,
+            )
+            data.pop("message_thread_id", None)
+            status, body = await _post_send(session, data)
+            if status < 400:
+                return
+
+        if status == 403:
+            logging.warning(
+                "Bot can't write to chat %s (kicked / no permission): %s",
+                chat_id,
+                body,
+            )
+        else:
+            logging.warning(
+                "Telegram sendMessage to %s returned %s: %s",
+                chat_id,
+                status,
+                body,
+            )
+    except aiohttp.ClientError as e:
+        logging.error("Error sending to chat %s: %s", chat_id, e)
 
 
 @router.post("/{token}")
@@ -75,18 +120,21 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
     if not integrations:
         return {"message": "No integrations found!"}
 
-    for integration in integrations:
-        chat = integration.chat
-        user = integration.user
+    async with aiohttp.ClientSession() as session:
+        for integration in integrations:
+            chat = integration.chat
+            user = integration.user
 
-        #if not await EventSetting.is_enabled(chat, X_GitHub_Event):
-        #    continue
+            if not await EventSetting.is_enabled(chat.chat_id, X_GitHub_Event):
+                continue
 
-        if X_GitHub_Event == "star" and check_floodwait(chat.chat_id, chat.floodwait):
-            continue
+            if X_GitHub_Event == "star" and check_floodwait(
+                chat.chat_id, chat.floodwait
+            ):
+                continue
 
-        message = build_message(X_GitHub_Event, payload, user.token)
-        if message:
-            send_message(chat.chat_id, chat.topic_id, message)
+            message = build_message(X_GitHub_Event, payload, user.token)
+            if message:
+                await send_message(session, chat.chat_id, chat.topic_id, message)
 
     return {"message": "Webhook processed for all integrations."}

@@ -49,11 +49,11 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot, config: Config):
     logging.debug(f"Privacy Mode - {states[not bot_info.can_read_all_group_messages]}")
     logging.debug(f"Inline Mode - {states[bot_info.supports_inline_queries]}")
 
-    logging.error("Bot started!")
+    logging.info("Bot started!")
 
 
 async def on_shutdown(dispatcher: Dispatcher, bot: Bot, config: Config):
-    logging.warning("Stopping bot...")
+    logging.info("Stopping bot...")
     await remove_bot_commands(bot, config)
     await bot.delete_webhook(drop_pending_updates=config.settings.drop_pending_updates)
     await dispatcher.fsm.storage.close()
@@ -63,7 +63,7 @@ async def on_shutdown(dispatcher: Dispatcher, bot: Bot, config: Config):
 
 async def main():
     coloredlogs.install(level=logging.INFO)
-    logging.warning("Starting bot...")
+    logging.info("Starting bot...")
 
     arguments = parse_arguments()
     config = parse_config(arguments.config)
@@ -106,4 +106,4 @@ if __name__ == "__main__":
         threading.Thread(target=webhook_dispatcher).start()
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logging.error("Bot stopped!")
+        logging.info("Bot stopped!")

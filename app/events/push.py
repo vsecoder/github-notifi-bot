@@ -8,6 +8,12 @@ auth context is available (GitHub App installation or PAT).
 import logging
 from typing import Optional
 
+from github import GithubException
+from requests.exceptions import (
+    ConnectionError as RequestsConnectionError,
+    Timeout,
+)
+
 from app.events._base import _Base, GitHubUser, Repository
 from app.events._context import EventCtx, make_github_client
 from app.events._formatting import _ as _e
@@ -59,6 +65,20 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
     if gh is not None:
         try:
             repo_api = gh.get_repo(event.repository.full_name)
+        except (RequestsConnectionError, Timeout) as e:
+            # Network-level — transient, GitHub will retry the webhook anyway.
+            logging.info(
+                "GitHub API unreachable for %s (transient %s); skipping diff stats",
+                event.repository.full_name,
+                type(e).__name__,
+            )
+        except GithubException as e:
+            logging.warning(
+                "GitHub rejected line-stat fetch for %s: HTTP %s — %s",
+                event.repository.full_name,
+                e.status,
+                e.data,
+            )
         except Exception as e:
             logging.warning(
                 "Couldn't open repo %s for line-stat enrichment: %s: %s",
@@ -105,23 +125,31 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
         # Line counts via API — best-effort enrichment.
         # Always render the Diff block when the API responded, even if both
         # numbers are zero (binary files / pure renames return 0/0); that
-        # way "no Diff line" reliably means "the API call failed" and the
-        # WARNING below tells you why.
+        # way "no Diff line" reliably means the API call didn't succeed.
         if repo_api is not None:
             try:
                 detail = repo_api.get_commit(c.id)
                 add_lines = sum(f.additions for f in detail.files)
                 del_lines = sum(f.deletions for f in detail.files)
-                logging.info(
-                    "Fetched line counts for %s/%s: +%d -%d",
-                    event.repository.full_name,
-                    c.id[:7],
-                    add_lines,
-                    del_lines,
-                )
                 block += (
                     f"\n<b>⌨️ Diff:</b>\n"
                     f"➕ {add_lines}\n➖ {del_lines}\n"
+                )
+            except (RequestsConnectionError, Timeout) as e:
+                logging.info(
+                    "GitHub API unreachable fetching commit %s/%s "
+                    "(transient %s); skipping diff stats",
+                    event.repository.full_name,
+                    c.id[:7],
+                    type(e).__name__,
+                )
+            except GithubException as e:
+                logging.warning(
+                    "GitHub rejected diff fetch for %s/%s: HTTP %s — %s",
+                    event.repository.full_name,
+                    c.id[:7],
+                    e.status,
+                    e.data,
                 )
             except Exception as e:
                 logging.warning(

@@ -17,6 +17,7 @@ from aiogram_dialog import Dialog, DialogManager, Window
 from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.kbd import Button, Cancel, Row, Url
 from aiogram_dialog.widgets.text import Const, Format
+from magic_filter import F
 
 from app.config import Config
 from app.db.functions import Installation, User
@@ -176,8 +177,27 @@ async def on_token_message(
 
 main_window = Window(
     Const("🔑 <b>GitHub Connection</b>\n"),
+    # App-section first — recommended path. PAT below as a legacy fallback.
     Format("🔗 <b>App:</b> {app_line}", when="app_configured"),
-    Format("🔑 <b>PAT:</b> {pat_line}"),
+    Url(
+        text=Format("{install_button_text}"),
+        url=Format("{app_url}"),
+        id="install_app",
+        when="app_configured",
+    ),
+    Const(
+        "\n<b>—</b>\n"
+        "🔑 <b>PAT</b> <i>(deprecated)</i>\n"
+        "<i>Use GitHub App above when possible — it gives the bot only the "
+        "repos you explicitly select, uses short-lived auto-rotating tokens, "
+        "and can be revoked from GitHub UI in one click. PAT support stays "
+        "for legacy installs and self-hosted deployments without an App.</i>",
+        when="app_configured",
+    ),
+    # When the App isn't configured on this deployment at all, keep the
+    # short PAT-only block without the "deprecated" banner.
+    Const("🔑 <b>Personal Access Token</b>", when=~F["app_configured"]),
+    Format("Status: {pat_line}"),
     Row(
         Button(Const("🔄 Update PAT"), id="upd", on_click=on_update_clicked),
         Button(
@@ -192,12 +212,6 @@ main_window = Window(
         id="rm",
         on_click=on_remove_clicked,
         when="has_token",
-    ),
-    Url(
-        text=Format("{install_button_text}"),
-        url=Format("{app_url}"),
-        id="install_app",
-        when="app_configured",
     ),
     Cancel(Const("❎ Close")),
     state=TokenSG.main,

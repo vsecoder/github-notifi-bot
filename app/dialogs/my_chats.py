@@ -10,12 +10,9 @@ Removal stays in-group (``/delete owner/repo``) — DM removal would need an
 admin re-check at apply-time which is outside the scope of a read-only view.
 """
 import asyncio
-import operator
-import time
 from typing import Any
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery
 from aiogram_dialog import Dialog, DialogManager, Window
@@ -30,38 +27,12 @@ from aiogram_dialog.widgets.kbd import (
 from aiogram_dialog.widgets.text import Const, Format
 
 from app.db.functions import Integration, User
+from app.utils.chat_access import invalidate_titles, resolve_chat_title
 
 
 class MyChatsSG(StatesGroup):
     chats = State()
     chat_detail = State()
-
-
-# Chat title cache: {chat_id: (title, expires_at)}
-_TITLE_TTL = 300.0
-_title_cache: dict[int, tuple[str, float]] = {}
-
-
-async def _resolve_chat_title(bot: Bot, chat_id: int) -> str:
-    cached = _title_cache.get(chat_id)
-    now = time.monotonic()
-    if cached and cached[1] > now:
-        return cached[0]
-    try:
-        tg_chat = await bot.get_chat(chat_id)
-        title = (
-            tg_chat.title
-            or (tg_chat.full_name if hasattr(tg_chat, "full_name") else None)
-            or f"chat {chat_id}"
-        )
-    except TelegramAPIError:
-        title = f"(unavailable, id={chat_id})"
-    _title_cache[chat_id] = (title, now + _TITLE_TTL)
-    return title
-
-
-def invalidate_titles() -> None:
-    _title_cache.clear()
 
 
 async def _bot(manager: DialogManager) -> Bot:
@@ -97,7 +68,7 @@ async def chats_getter(
 
     bot = await _bot(dialog_manager)
     titles = await asyncio.gather(
-        *[_resolve_chat_title(bot, cid) for cid in by_chat]
+        *[resolve_chat_title(bot, cid) for cid in by_chat]
     )
     chats = [
         {
@@ -182,7 +153,7 @@ async def chat_detail_getter(
     ) or "<i>no integrations</i>"
 
     bot = await _bot(dialog_manager)
-    title = await _resolve_chat_title(bot, chat_id)
+    title = await resolve_chat_title(bot, chat_id)
 
     return {
         "missing": False,

@@ -6,6 +6,7 @@ from aiogram.types import Message
 from app.utils.hooks import HookError, check_repo, create_webhook
 from app.db.functions import Chat, Integration, User
 from app.config import Config
+from app.services.integration import integrate_repo
 
 router = Router()
 
@@ -52,8 +53,6 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         return
     assert message.from_user is not None  # narrowed by _require_group_admin
 
-    await Chat.ensure_registered(message.chat.id)
-
     if not await User.is_registered(message.from_user.id):
         return await message.answer(
             "You're not registered. Send /start to me in private chat first."
@@ -66,48 +65,18 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         )
     repo_name = parts[1]
 
-    user = await User.get(telegram_id=message.from_user.id)
-    if not user.token:
-        return await message.answer(
-            "You haven't set a GitHub token yet. Send it to me in private chat, "
-            "or use /start there for instructions."
-        )
-
-    repo = check_repo(user.token, repo_name)
-    if isinstance(repo, HookError):
-        return await message.answer(f"❌ {repo.message}")
-
-    existing = await Integration.get_by_chat_and_repo(
-        chat_id=message.chat.id, repo_name=repo_name
-    )
-    if existing:
-        return await message.answer(
-            f"Repository <code>{repo_name}</code> is already integrated in this chat."
-        )
-
-    integration, reused_existing = await Chat.add_integration(
+    result = await integrate_repo(
+        bot=bot,
         chat_id=message.chat.id,
-        user_id=user.id,
-        repository_name=repo_name,
+        telegram_user_id=message.from_user.id,
+        repo_name=repo_name,
+        host=config.api.host,
+        skip_admin_check=True,  # already verified via _require_group_admin
     )
-
-    if not reused_existing:
-        result = create_webhook(
-            config.api.host, integration.integration_token, user.token, repo_name
-        )
-
-        if isinstance(result, HookError):
-            await Integration.delete_by_id(integration.id)
-            await message.answer(
-                f"❌ Couldn't create the webhook for <code>{repo_name}</code>.\n\n"
-                f"{result.message}"
-            )
-            return
-
-    await message.answer(
-        f"✅ Repository <code>{repo_name}</code> integrated. "
-        "Notifications will arrive here."
-    )
+    if result.success:
+        await message.answer(result.message)
+    else:
+        await message.answer(f"❌ {result.message}")
 
 
 @router.message(Command(commands=["integrations"]))

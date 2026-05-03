@@ -16,7 +16,7 @@ from requests.exceptions import (
 
 from app.events._base import _Base, GitHubUser, Repository
 from app.events._context import EventCtx, make_github_client
-from app.events._formatting import _ as _e
+from app.events._formatting import _ as _e, truncate
 from app.events._registry import register
 
 
@@ -98,11 +98,16 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
         else:
             author_link = f"<i>{author_name}</i>"
 
+        # Cap individual commit messages so a single huge message can't
+        # blow past the per-message length limit. The splitter handles
+        # the multi-commit case but a 10k-char single commit message would
+        # force a hard mid-line split.
+        message_text = truncate(c.message, 500)
         block = (
             f'<blockquote expandable="expandable"><b>Commit '
             f'<a href="{c.url}">#{c.id[:7]}</a> by '
             f"<i>{author_name} ({author_link})</i></b>\n"
-            f"<i>{_e(c.message)}</i>\n"
+            f"<i>{_e(message_text)}</i>\n"
         )
 
         # File lists straight from payload.

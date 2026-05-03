@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, Request
 from app.config import parse_config
 from app.db.functions import Chat, EventSetting, Integration
 from app.events import EventCtx, build_message
+from app.utils.text_splitter import split_html_message
 
 router = APIRouter()
 config = parse_config()
@@ -116,6 +117,23 @@ async def send_message(
     integration: Integration,
     text: str,
 ) -> None:
+    """Send a (possibly long) Telegram-HTML message to the integration's
+    chat. Splits the text into 4096-safe chunks at safe HTML boundaries and
+    sends them sequentially, so one event with many commits / a huge body
+    arrives as a series of messages instead of falling on the floor."""
+    chunks = split_html_message(text)
+    for chunk in chunks:
+        await _send_one_chunk(session, integration, chunk)
+
+
+async def _send_one_chunk(
+    session: aiohttp.ClientSession,
+    integration: Integration,
+    text: str,
+) -> None:
+    """Send a single chunk that's already known to fit Telegram's limit.
+    Handles topic-thread retry, owner-notify on persistent failure, and
+    auto-cleanup of dead topics."""
     chat = integration.chat
     if chat is None:
         return

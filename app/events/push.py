@@ -2,16 +2,14 @@
 
 File lists (added / removed / modified) come straight out of the webhook
 payload — no API call needed. The line-count diff (`+N / -N`) does need an
-API hit per commit, so we treat it as optional enrichment when the user
-token is available and the call doesn't fail.
+API hit per commit, so we treat it as optional enrichment using whichever
+auth context is available (GitHub App installation or PAT).
 """
 import logging
 from typing import Optional
 
-from github import Auth, Github
-
 from app.events._base import _Base, GitHubUser, Repository
-from app.events._context import EventCtx
+from app.events._context import EventCtx, make_github_client
 from app.events._formatting import _ as _e
 from app.events._registry import register
 
@@ -54,16 +52,18 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
 
     # Only used to pull `+/-` line counts, which aren't in the webhook payload.
     # File lists themselves come from the payload — no API call required.
+    # ``make_github_client`` picks App-installation auth or PAT based on the
+    # context — formatter doesn't care which one.
     repo_api = None
-    if ctx.user_token:
+    gh = make_github_client(ctx)
+    if gh is not None:
         try:
-            repo_api = Github(auth=Auth.Token(ctx.user_token)).get_repo(
-                event.repository.full_name
-            )
+            repo_api = gh.get_repo(event.repository.full_name)
         except Exception as e:
             logging.warning(
-                "Couldn't open repo %s for line-stat enrichment: %s",
+                "Couldn't open repo %s for line-stat enrichment: %s: %s",
                 event.repository.full_name,
+                type(e).__name__,
                 e,
             )
 
@@ -103,20 +103,32 @@ def commit_message(event: PushEvent, ctx: EventCtx) -> str:
             )
 
         # Line counts via API — best-effort enrichment.
+        # Always render the Diff block when the API responded, even if both
+        # numbers are zero (binary files / pure renames return 0/0); that
+        # way "no Diff line" reliably means "the API call failed" and the
+        # WARNING below tells you why.
         if repo_api is not None:
             try:
                 detail = repo_api.get_commit(c.id)
                 add_lines = sum(f.additions for f in detail.files)
                 del_lines = sum(f.deletions for f in detail.files)
-                if add_lines or del_lines:
-                    block += (
-                        f"\n<b>⌨️ Diff:</b>\n"
-                        f"➕ {add_lines}\n➖ {del_lines}\n"
-                    )
+                logging.info(
+                    "Fetched line counts for %s/%s: +%d -%d",
+                    event.repository.full_name,
+                    c.id[:7],
+                    add_lines,
+                    del_lines,
+                )
+                block += (
+                    f"\n<b>⌨️ Diff:</b>\n"
+                    f"➕ {add_lines}\n➖ {del_lines}\n"
+                )
             except Exception as e:
                 logging.warning(
-                    "Couldn't fetch line counts for commit %s: %s",
+                    "Couldn't fetch line counts for %s/%s: %s: %s",
+                    event.repository.full_name,
                     c.id[:7],
+                    type(e).__name__,
                     e,
                 )
 

@@ -212,7 +212,13 @@ async def app_webhook(
             ):
                 continue
 
-            ctx = EventCtx(user_token=inst_token)
+            # ``installation_id`` triggers proper Auth.AppInstallationAuth in
+            # formatters; ``auth_token`` stays as a no-op fallback.
+            ctx = EventCtx(
+                auth_token=inst_token,
+                installation_id=installation_id,
+                config=config,
+            )
             message = build_message(x_github_event, payload, ctx)
             if message:
                 await send_message(session, integration, message)

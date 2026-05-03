@@ -231,7 +231,7 @@ async def webhook(req: Request, token: str, X_GitHub_Event: str = Header()):
                 skipped_floodwait += 1
                 continue
 
-            ctx = EventCtx(user_token=user.token)
+            ctx = EventCtx(auth_token=user.token, config=config)
             message = build_message(X_GitHub_Event, payload, ctx)
             if not message:
                 skipped_no_message += 1

@@ -49,7 +49,6 @@ async def show_event_settings(message: Message, bot: Bot):
     await message.answer(
         "✨ Github events settings",
         reply_markup=build_keyboard(settings),
-        message_thread_id=message.message_thread_id,
     )
 
 

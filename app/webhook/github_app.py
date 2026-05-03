@@ -6,22 +6,26 @@
   row, and bounce the user back into Telegram.
 
 * ``POST /webhook``      — single App-level webhook endpoint with HMAC
-  verification. For now: handles ``installation`` lifecycle events (deleted,
-  suspended) and logs everything else. Per-event delivery to chats lands
-  in PR 6 once App-based ``Integration`` rows can exist.
+  verification. Handles ``installation`` lifecycle events (deleted /
+  suspended / created backfill) and dispatches per-repo events to all
+  matching ``Integration`` rows with ``auth_source="app"``.
 """
 import logging
 
+import aiohttp
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.db.functions import Installation, User
+from app.db.functions import EventSetting, Installation, Integration, User
+from app.db.models import AuthSource
+from app.events import EventCtx, build_message
 from app.utils.github_app import (
     get_account_for_installation,
+    get_installation_token,
     verify_state,
     verify_webhook_signature,
 )
-from app.webhook.api import config
+from app.webhook.api import check_floodwait, config, send_message
 
 router = APIRouter()
 
@@ -154,14 +158,64 @@ async def app_webhook(
         )
         return {"status": "ok", "action": action}
 
-    # Per-repo events for App-based integrations are dispatched in PR 6.
+    # Dispatch per-repo events to App-based integrations.
     installation_id = payload.get("installation", {}).get("id")
     repo = payload.get("repository", {}).get("full_name")
-    logging.info(
-        "App webhook received: event=%s installation_id=%s repo=%s",
-        x_github_event,
-        installation_id,
-        repo,
+    if not installation_id or not repo:
+        logging.info(
+            "App webhook %s: missing installation/repo, skipping (payload keys=%s)",
+            x_github_event,
+            list(payload.keys()),
+        )
+        return {"status": "ok"}
+
+    integrations = (
+        await Integration.filter(
+            auth_source=AuthSource.app.value,
+            installation__installation_id=installation_id,
+            repository_name=repo,
+        ).prefetch_related("chat", "user", "installation")
     )
 
-    return {"status": "ok"}
+    if not integrations:
+        logging.debug(
+            "App webhook %s for %s: no matching integrations",
+            x_github_event,
+            repo,
+        )
+        return {"status": "ok", "matched": 0}
+
+    # Mint installation token once per request — it's shared across chats
+    # for the same installation. Used both for the EventCtx (commit_message
+    # uses it for diff stats) and as a fallback for any other formatter.
+    try:
+        inst_token = get_installation_token(config, installation_id)
+    except Exception:
+        logging.exception(
+            "Couldn't mint installation token for %s", installation_id
+        )
+        inst_token = None
+
+    sent = 0
+    async with aiohttp.ClientSession() as session:
+        for integration in integrations:
+            chat = integration.chat
+            if chat is None:
+                continue
+
+            if not await EventSetting.is_enabled(
+                chat.chat_id, x_github_event
+            ):
+                continue
+            if x_github_event == "star" and check_floodwait(
+                chat.chat_id, chat.floodwait
+            ):
+                continue
+
+            ctx = EventCtx(user_token=inst_token)
+            message = build_message(x_github_event, payload, ctx)
+            if message:
+                await send_message(session, integration, message)
+                sent += 1
+
+    return {"status": "ok", "matched": len(integrations), "sent": sent}

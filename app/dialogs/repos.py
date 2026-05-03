@@ -2,7 +2,7 @@
 
 Five windows on a single ``ReposSG``:
 
-* ``orgs``                — orgs accessible by the user, plus personal namespace.
+* ``orgs``                — orgs accessible by the user (PAT + App merged).
 * ``repos``               — paginated repo list for the selected org.
 * ``repo_detail``         — info about one repo + an "Integrate to a chat" button.
 * ``choose_chat``         — list of chats where the user is currently admin;
@@ -38,9 +38,9 @@ from app.utils.chat_access import (
 from app.utils.github_access import (
     OrgSummary,
     RepoSummary,
-    invalidate,
-    list_orgs,
-    list_repos,
+    invalidate_for_user,
+    list_orgs_for_user,
+    list_repos_for_org,
 )
 
 
@@ -54,18 +54,15 @@ class ReposSG(StatesGroup):
 
 # ----- helpers -----
 
-async def _user_token(manager: DialogManager) -> str | None:
+async def _current_user(manager: DialogManager) -> User | None:
     if manager.event.from_user is None:
         return None
-    user = await User.get_or_none(telegram_id=manager.event.from_user.id)
-    return user.token if user else None
+    return await User.get_or_none(telegram_id=manager.event.from_user.id)
 
 
 async def _user_integrations(manager: DialogManager) -> set[str]:
     """Set of repository_name's the current user has integrated anywhere."""
-    if manager.event.from_user is None:
-        return set()
-    user = await User.get_or_none(telegram_id=manager.event.from_user.id)
+    user = await _current_user(manager)
     if user is None:
         return set()
     rows = await Integration.filter(user_id=user.id).all()
@@ -73,7 +70,9 @@ async def _user_integrations(manager: DialogManager) -> set[str]:
 
 
 def _org_label(org: OrgSummary) -> str:
-    return f"{'👤' if org['is_personal'] else '🏢'} {org['login']}"
+    icon = "👤" if org["is_personal"] else "🏢"
+    tag = " " + ("[A]" if org["source"] == "app" else "[P]")
+    return f"{icon} {org['login']}{tag}"
 
 
 def _repo_label(repo: RepoSummary, integrated: set[str]) -> str:
@@ -88,20 +87,28 @@ def _repo_label(repo: RepoSummary, integrated: set[str]) -> str:
 async def orgs_getter(
     dialog_manager: DialogManager, **_: Any
 ) -> dict[str, Any]:
-    token = await _user_token(dialog_manager)
-    if not token:
-        return {"no_token": True, "has_error": False, "orgs": []}
+    user = await _current_user(dialog_manager)
+    config: Config = dialog_manager.middleware_data["config"]
+
     try:
-        orgs = await list_orgs(token)
+        orgs = await list_orgs_for_user(user, config)
     except Exception as e:
         return {
-            "no_token": False,
+            "no_auth": False,
             "has_error": True,
             "error": str(e)[:200],
             "orgs": [],
         }
+
+    if not orgs:
+        return {
+            "no_auth": True,
+            "has_error": False,
+            "orgs": [],
+        }
+
     return {
-        "no_token": False,
+        "no_auth": False,
         "has_error": False,
         "orgs": [{**o, "label": _org_label(o)} for o in orgs],
     }
@@ -113,37 +120,45 @@ async def on_org_selected(
     manager: DialogManager,
     item_id: str,
 ) -> None:
-    token = await _user_token(manager)
-    if not token:
-        await callback.answer("No token. Tap 🔌 Connect.", show_alert=True)
-        return
-    orgs = await list_orgs(token)
+    user = await _current_user(manager)
+    config: Config = manager.middleware_data["config"]
+    orgs = await list_orgs_for_user(user, config)
     selected = next((o for o in orgs if o["login"] == item_id), None)
     if selected is None:
         await callback.answer("Organisation not found.", show_alert=True)
         return
     manager.dialog_data["selected_org"] = selected["login"]
     manager.dialog_data["selected_personal"] = selected["is_personal"]
+    manager.dialog_data["selected_source"] = selected["source"]
+    manager.dialog_data["selected_installation_id"] = selected[
+        "installation_id"
+    ]
     await manager.switch_to(ReposSG.repos)
 
 
 async def on_orgs_refresh(
     callback: CallbackQuery, button: Button, manager: DialogManager
 ) -> None:
-    token = await _user_token(manager)
-    if token:
-        invalidate(token)
+    user = await _current_user(manager)
+    config: Config = manager.middleware_data["config"]
+    if user is not None:
+        await invalidate_for_user(user, config)
     await callback.answer("Refreshed.")
 
 
 orgs_window = Window(
     Const("🏢 <b>Choose where to look</b>"),
     Const(
-        "\n❌ You don't have a GitHub token saved. Tap <b>🔌 Connect</b> "
-        "on the keyboard to set one.",
-        when="no_token",
+        "\n❌ You haven't authorized me with GitHub yet.\n"
+        "Tap <b>🔌 Connect</b> on the keyboard to install the GitHub App "
+        "or set a Personal Access Token.",
+        when="no_auth",
     ),
     Format("\n❌ Couldn't fetch organisations: {error}", when="has_error"),
+    Const(
+        "\n<i>Tag legend: [A] = via GitHub App  •  [P] = via Personal Access Token</i>",
+        when="orgs",
+    ),
     ScrollingGroup(
         Select(
             Format("{item[label]}"),
@@ -168,25 +183,39 @@ orgs_window = Window(
 
 # ----- repos window -----
 
+def _selected_org_summary(manager: DialogManager) -> OrgSummary | None:
+    login = manager.dialog_data.get("selected_org")
+    if not login:
+        return None
+    return OrgSummary(
+        login=login,
+        is_personal=bool(manager.dialog_data.get("selected_personal", False)),
+        source=str(manager.dialog_data.get("selected_source", "pat")),
+        installation_id=int(
+            manager.dialog_data.get("selected_installation_id") or 0
+        ),
+    )
+
+
 async def repos_getter(
     dialog_manager: DialogManager, **_: Any
 ) -> dict[str, Any]:
-    token = await _user_token(dialog_manager)
-    org = dialog_manager.dialog_data.get("selected_org")
-    is_personal = dialog_manager.dialog_data.get("selected_personal", False)
-    if not token or not org:
+    user = await _current_user(dialog_manager)
+    config: Config = dialog_manager.middleware_data["config"]
+    org = _selected_org_summary(dialog_manager)
+    if org is None:
         return {
             "title": "Repos",
             "has_error": True,
-            "error": "Missing token or org. Go back and pick again.",
+            "error": "Missing selection. Go back and pick an org again.",
             "repos": [],
             "count": 0,
         }
     try:
-        repos = await list_repos(token, org, is_personal)
+        repos = await list_repos_for_org(user, org, config)
     except Exception as e:
         return {
-            "title": f"{org} / repos",
+            "title": f"{org['login']} / repos",
             "has_error": True,
             "error": str(e)[:200],
             "repos": [],
@@ -195,7 +224,7 @@ async def repos_getter(
     integrated = await _user_integrations(dialog_manager)
     decorated = [{**r, "label": _repo_label(r, integrated)} for r in repos]
     return {
-        "title": f"{org} / repos",
+        "title": f"{org['login']} / repos",
         "has_error": False,
         "repos": decorated,
         "count": len(decorated),
@@ -215,9 +244,10 @@ async def on_repo_selected(
 async def on_repos_refresh(
     callback: CallbackQuery, button: Button, manager: DialogManager
 ) -> None:
-    token = await _user_token(manager)
-    if token:
-        invalidate(token)
+    user = await _current_user(manager)
+    config: Config = manager.middleware_data["config"]
+    if user is not None:
+        await invalidate_for_user(user, config)
     await callback.answer("Refreshed.")
 
 
@@ -257,14 +287,14 @@ repos_window = Window(
 async def repo_detail_getter(
     dialog_manager: DialogManager, **_: Any
 ) -> dict[str, Any]:
-    token = await _user_token(dialog_manager)
-    org = dialog_manager.dialog_data.get("selected_org")
-    is_personal = dialog_manager.dialog_data.get("selected_personal", False)
+    user = await _current_user(dialog_manager)
+    config: Config = dialog_manager.middleware_data["config"]
+    org = _selected_org_summary(dialog_manager)
     full_name = dialog_manager.dialog_data.get("selected_repo")
-    if not (token and org and full_name):
+    if not (user and org and full_name):
         return {"missing": True, "ok": False, "can_integrate": False}
 
-    repos = await list_repos(token, org, is_personal)
+    repos = await list_repos_for_org(user, org, config)
     repo = next((r for r in repos if r["full_name"] == full_name), None)
     if repo is None:
         return {"missing": True, "ok": False, "can_integrate": False}
@@ -272,16 +302,19 @@ async def repo_detail_getter(
     rows = await Integration.filter(repository_name=full_name).prefetch_related(
         "chat"
     )
-    chat_ids = []
+    chat_lines = []
     for row in rows:
         try:
-            chat_ids.append(row.chat.chat_id)  # type: ignore[union-attr]
+            chat_id = row.chat.chat_id  # type: ignore[union-attr]
+            chat_lines.append(f"• <code>chat {chat_id}</code>")
         except Exception:
             continue
     integrations_block = (
-        "\n".join(f"• <code>chat {cid}</code>" for cid in chat_ids)
-        if chat_ids
-        else "<i>not integrated yet</i>"
+        "\n".join(chat_lines) if chat_lines else "<i>not integrated yet</i>"
+    )
+
+    source_label = (
+        "🔗 GitHub App" if repo["source"] == "app" else "🔑 Personal Access Token"
     )
 
     return {
@@ -298,6 +331,7 @@ async def repo_detail_getter(
         ),
         "description": repo["description"] or "<i>no description</i>",
         "integrations_block": integrations_block,
+        "source_label": source_label,
     }
 
 
@@ -306,6 +340,7 @@ repo_detail_window = Window(
     Format(
         "<b>{full_name}</b>\n"
         "{private_label}  •  ⭐ {stars}  •  {admin_label}\n"
+        "Source: {source_label}\n"
         "<i>{description}</i>\n\n"
         "🔌 <b>Integrations:</b>\n{integrations_block}",
         when="ok",
@@ -336,11 +371,10 @@ async def choose_chat_getter(
     repo = dialog_manager.dialog_data.get("selected_repo") or "?"
     chats = await list_admin_chats(bot, dialog_manager.event.from_user.id)
 
-    # Skip chats where this repo is already integrated.
-    already_in = set(
-        (await Integration.filter(repository_name=repo).prefetch_related("chat"))
-    )
-    blocked_chat_ids = set()
+    already_in = await Integration.filter(
+        repository_name=repo
+    ).prefetch_related("chat")
+    blocked_chat_ids: set[int] = set()
     for row in already_in:
         try:
             blocked_chat_ids.add(row.chat.chat_id)  # type: ignore[union-attr]
@@ -392,15 +426,13 @@ async def on_chat_chosen(
         chat_id=chat_id,
         telegram_user_id=manager.event.from_user.id,
         repo_name=repo,
-        host=config.api.host,
+        config=config,
     )
 
     manager.dialog_data["result_success"] = result.success
     manager.dialog_data["result_message"] = result.message
-    manager.dialog_data["result_chat_id"] = chat_id
 
     if result.success:
-        # Announce in the target chat too, so other members know.
         actor = callback.from_user
         actor_link = (
             f'<a href="tg://user?id={actor.id}">'
@@ -480,11 +512,7 @@ async def integration_result_getter(
 ) -> dict[str, Any]:
     success = dialog_manager.dialog_data.get("result_success", False)
     msg = dialog_manager.dialog_data.get("result_message") or "—"
-    return {
-        "success": success,
-        "fail": not success,
-        "message": msg,
-    }
+    return {"success": success, "fail": not success, "message": msg}
 
 
 integration_result_window = Window(

@@ -77,7 +77,7 @@ async def integrate_handler(message: Message, bot: Bot, config: Config):
         chat_id=message.chat.id,
         telegram_user_id=message.from_user.id,
         repo_name=repo_name,
-        host=config.api.host,
+        config=config,
         skip_admin_check=True,  # already verified via _require_group_admin
     )
     if result.success:

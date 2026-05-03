@@ -8,6 +8,7 @@ Three screens:
 The PAT message is auto-deleted right after we read it, so the secret doesn't
 linger in the chat history.
 """
+
 from typing import Any
 
 from aiogram.fsm.state import State, StatesGroup
@@ -18,7 +19,7 @@ from aiogram_dialog.widgets.kbd import Button, Cancel, Row, Url
 from aiogram_dialog.widgets.text import Const, Format
 
 from app.config import Config
-from app.db.functions import User
+from app.db.functions import Installation, User
 from app.utils.github_app import install_url
 from app.utils.hooks import HookError, validate
 
@@ -45,33 +46,48 @@ async def main_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]
     user = await _current_user(dialog_manager)
     config: Config = dialog_manager.middleware_data["config"]
 
-    app_url = ""
+    # PAT status
+    if user and user.token:
+        pat_line = f"✅ Saved (<code>{_mask(user.token)}</code>)"
+        has_token = True
+    else:
+        pat_line = "❌ No token saved"
+        has_token = False
+
+    # GitHub App status
     app_configured = config.github_app.is_configured
+    app_url = ""
     if app_configured and dialog_manager.event.from_user is not None:
         try:
             app_url = install_url(config, dialog_manager.event.from_user.id)
         except RuntimeError:
             app_configured = False
 
-    if user and user.token:
-        status = f"✅ Saved (<code>{_mask(user.token)}</code>)"
-        return {
-            "status_line": status,
-            "has_token": True,
-            "app_configured": app_configured,
-            "app_url": app_url,
-        }
+    installations: list[Installation] = []
+    if user is not None:
+        installations = await Installation.for_user(user.id)
+    has_app = bool(installations)
+
+    if has_app:
+        accounts = ", ".join(f"<code>{i.account_login}</code>" for i in installations)
+        app_line = f"✅ Installed for {accounts}"
+        install_button_text = "🔗 Add another installation"
+    else:
+        app_line = "❌ Not installed"
+        install_button_text = "🔗 Install GitHub App"
+
     return {
-        "status_line": "❌ No token saved.",
-        "has_token": False,
+        "pat_line": pat_line,
+        "has_token": has_token,
         "app_configured": app_configured,
         "app_url": app_url,
+        "app_line": app_line,
+        "has_app": has_app,
+        "install_button_text": install_button_text,
     }
 
 
-async def awaiting_getter(
-    dialog_manager: DialogManager, **_: Any
-) -> dict[str, Any]:
+async def awaiting_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]:
     error = dialog_manager.dialog_data.get("error")
     return {"error": error or "", "has_error": bool(error)}
 
@@ -150,24 +166,25 @@ async def on_token_message(
 
 main_window = Window(
     Const("🔑 <b>GitHub Connection</b>\n"),
-    Format("PAT: {status_line}"),
+    Format("🔗 <b>App:</b> {app_line}", when="app_configured"),
+    Format("🔑 <b>PAT:</b> {pat_line}"),
     Row(
-        Button(Const("🔄 Update"), id="upd", on_click=on_update_clicked),
+        Button(Const("🔄 Update PAT"), id="upd", on_click=on_update_clicked),
         Button(
-            Const("🧪 Test"),
+            Const("🧪 Test PAT"),
             id="tst",
             on_click=on_test_clicked,
             when="has_token",
         ),
     ),
     Button(
-        Const("🗑 Remove"),
+        Const("🗑 Remove PAT"),
         id="rm",
         on_click=on_remove_clicked,
         when="has_token",
     ),
     Url(
-        text=Const("🔗 Install GitHub App (recommended)"),
+        text=Format("{install_button_text}"),
         url=Format("{app_url}"),
         id="install_app",
         when="app_configured",
